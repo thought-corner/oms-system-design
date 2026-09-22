@@ -1,24 +1,19 @@
-package com.project.msa.domain
+package com.project.product.domain
 
-import com.project.msa.exception.BusinessException
-import com.project.msa.exception.ProductErrorCode
+import com.project.common.exception.BusinessException
+import com.project.product.exception.ProductErrorCode
 import jakarta.persistence.Entity
-import jakarta.persistence.GeneratedValue
-import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 
 @Entity
 @Table(name = "products")
 class Product(
+    @Id
+    val id: Long,
     quantity: Long,
     val price: Long,
 ) {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long? = null
-        protected set
 
     var quantity: Long = quantity
         protected set
@@ -32,5 +27,11 @@ class Product(
         }
 
         this.quantity -= quantity
+    }
+
+    fun restore(quantity: Long) {
+        require(quantity > 0) { "quantity=$quantity" }
+
+        this.quantity += quantity
     }
 }

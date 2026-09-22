@@ -1,6 +1,6 @@
-package com.project.msa.repository
+package com.project.product.repository
 
-import com.project.msa.domain.Product
+import com.project.product.domain.Product
 import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
