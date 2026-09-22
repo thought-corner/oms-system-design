@@ -1,4 +1,4 @@
-package com.project.msa.exception
+package com.project.common.exception
 
 data class ErrorResponse(
     val code: String,

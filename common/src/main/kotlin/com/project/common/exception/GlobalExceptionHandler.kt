@@ -1,7 +1,6 @@
-package com.project.msa.exception
+package com.project.common.exception
 
 import org.slf4j.LoggerFactory
-import org.springframework.dao.PessimisticLockingFailureException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -16,10 +15,6 @@ class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException::class)
     fun handleBusiness(e: BusinessException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(e.errorCode.status).body(ErrorResponse.of(e.errorCode, e.message))
-
-    @ExceptionHandler(PessimisticLockingFailureException::class)
-    fun handleLock(e: PessimisticLockingFailureException): ResponseEntity<ErrorResponse> =
-        ResponseEntity.status(OrderErrorCode.ORDER_LOCKED.status).body(ErrorResponse.of(OrderErrorCode.ORDER_LOCKED))
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun handleUnreadable(e: HttpMessageNotReadableException): ResponseEntity<ErrorResponse> =

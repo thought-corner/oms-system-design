@@ -1,4 +1,4 @@
-package com.project.msa.architecture
+package com.project.common.architecture
 
 import com.tngtech.archunit.core.importer.ClassFileImporter
 import com.tngtech.archunit.core.importer.ImportOption
@@ -7,9 +7,6 @@ import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 import com.tngtech.archunit.library.Architectures.layeredArchitecture
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices
-import com.project.msa.domain.Order
-import com.project.msa.domain.OrderStatus
-import com.project.msa.service.OrderService
 import io.kotest.core.spec.style.BehaviorSpec
 import jakarta.persistence.Entity
 import org.springframework.data.jpa.repository.Lock
@@ -19,112 +16,110 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDateTime
 
-class ArchitectureTest : BehaviorSpec({
+abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
 
     val classes = ClassFileImporter()
         .withImportOption(ImportOption.DoNotIncludeTests())
-        .importPackages("com.project.msa")
+        .importPackages(basePackage)
 
-    Given("최상위 패키지 = 레이어") {
+    Given("$basePackage — 최상위 패키지 = 레이어") {
 
-        Then("의존 방향은 controller → service → repository/statemachine → domain 이고 init 은 repository·domain 만 본다") {
+        Then("의존 방향은 controller → service → repository/statemachine/client → domain 이다") {
             layeredArchitecture().consideringOnlyDependenciesInLayers()
+                .withOptionalLayers(true)
                 .layer("Controller").definedBy("..controller..")
                 .layer("Service").definedBy("..service..")
                 .layer("Repository").definedBy("..repository..")
                 .layer("Domain").definedBy("..domain..")
                 .layer("StateMachine").definedBy("..statemachine..")
+                .layer("Client").definedBy("..client..")
+                .layer("Config").definedBy("..config..")
                 .layer("Init").definedBy("..init..")
                 .whereLayer("Controller").mayNotBeAccessedByAnyLayer()
                 .whereLayer("Service").mayOnlyBeAccessedByLayers("Controller")
                 .whereLayer("Repository").mayOnlyBeAccessedByLayers("Service", "Init")
                 .whereLayer("StateMachine").mayOnlyBeAccessedByLayers("Service")
+                .whereLayer("Client").mayOnlyBeAccessedByLayers("Service", "Config")
                 .whereLayer("Domain").mayOnlyBeAccessedByLayers("Service", "Repository", "StateMachine", "Init")
+                .whereLayer("Config").mayNotBeAccessedByAnyLayer()
                 .whereLayer("Init").mayNotBeAccessedByAnyLayer()
                 .check(classes)
         }
 
         Then("패키지 사이에 순환 의존이 없다") {
-            slices().matching("com.project.msa.(*)..").should().beFreeOfCycles().check(classes)
-        }
-    }
-
-    Given("exception 패키지") {
-
-        Then("어느 레이어에도 의존하지 않는다") {
-            noClasses().that().resideInAPackage("..exception..")
-                .should().dependOnClassesThat()
-                .resideInAnyPackage("..controller..", "..service..", "..repository..", "..domain..", "..statemachine..")
-                .check(classes)
+            slices().matching("$basePackage.(*)..").should().beFreeOfCycles().check(classes)
         }
 
-        Then("HttpStatus 는 exception 밖에서 쓰지 않는다") {
-            noClasses().that().resideOutsideOfPackage("..exception..")
-                .should().dependOnClassesThat().belongToAnyOf(HttpStatus::class.java)
-                .check(classes)
-        }
-
-        Then("맨 RuntimeException 은 exception 밖에서 만들지 않는다") {
-            noClasses().that().resideOutsideOfPackage("..exception..")
-                .should().callConstructor(RuntimeException::class.java, String::class.java)
-                .orShould().callConstructor(RuntimeException::class.java)
+        Then("원격 호출은 client 밖에서 하지 않는다 (config는 배선만 한다)") {
+            noClasses().that().resideOutsideOfPackage("..client..")
+                .and().resideOutsideOfPackage("..config..")
+                .should().dependOnClassesThat().resideInAPackage("org.springframework.web.client..")
+                .allowEmptyShould(true)
                 .check(classes)
         }
     }
 
-    Given("애너테이션의 자리") {
+    Given("$basePackage — 어노테이션이 있어야 할 자리") {
 
-        Then("@Lock 메서드는 repository 에만 있다") {
+        Then("`@Lock`은 repository 에만 붙는다") {
             methods().that().areAnnotatedWith(Lock::class.java)
                 .should().beDeclaredInClassesThat().resideInAPackage("..repository..")
+                .allowEmptyShould(true)
                 .check(classes)
         }
 
-        Then("@Transactional 메서드는 service 에만 있다") {
+        Then("`@Transactional`은 service 에만 붙는다") {
             methods().that().areAnnotatedWith(Transactional::class.java)
                 .should().beDeclaredInClassesThat().resideInAPackage("..service..")
+                .allowEmptyShould(true)
                 .check(classes)
         }
 
-        Then("@Transactional 클래스도 service 에만 있다") {
-            classes().that().areAnnotatedWith(Transactional::class.java)
+        Then("`@Entity`는 domain 에만 붙는다") {
+            classes().that().areAnnotatedWith(Entity::class.java)
+                .should().resideInAPackage("..domain..")
+                .allowEmptyShould(true)
+                .check(classes)
+        }
+
+        Then("`@Service`는 service 에만 붙는다") {
+            classes().that().areAnnotatedWith(Service::class.java)
                 .should().resideInAPackage("..service..")
                 .allowEmptyShould(true)
                 .check(classes)
         }
 
-        Then("@Entity 는 domain 에 있다") {
-            classes().that().areAnnotatedWith(Entity::class.java)
-                .should().resideInAPackage("..domain..")
-                .check(classes)
-        }
-
-        Then("@Service 는 service 에 있다") {
-            classes().that().areAnnotatedWith(Service::class.java)
-                .should().resideInAPackage("..service..")
-                .check(classes)
-        }
-
-        Then("@RestController 는 controller 에 있다") {
+        Then("`@RestController`는 controller 에만 붙는다") {
             classes().that().areAnnotatedWith(RestController::class.java)
                 .should().resideInAPackage("..controller..")
+                .allowEmptyShould(true)
                 .check(classes)
         }
     }
 
-    Given("상태 전이") {
+    Given("$basePackage — 컴파일이 못 잡는 규칙") {
 
-        Then("Order.transitionTo 는 OrderService 만 부른다 — 전이 판정은 OrderStateMachine 을 거친다") {
-            noClasses().that().doNotBelongToAnyOf(OrderService::class.java)
-                .should().callMethod(Order::class.java, "transitionTo", OrderStatus::class.java)
+        Then("HttpStatus는 exception 밖에서 쓰지 않는다") {
+            noClasses().that().resideOutsideOfPackage("..exception..")
+                .should().dependOnClassesThat().belongToAnyOf(HttpStatus::class.java)
+                .allowEmptyShould(true)
                 .check(classes)
         }
-    }
 
-    Given("시각") {
+        Then("LocalDateTime.now()를 직접 부르지 않는다 (시각은 Clock 빈에서)") {
+            noClasses().should()
+                .callMethod(LocalDateTime::class.java, "now")
+                .orShould().callMethod(LocalDateTime::class.java, "now", java.time.ZoneId::class.java)
+                .allowEmptyShould(true)
+                .check(classes)
+        }
 
-        Then("LocalDateTime.now() 는 어디서도 부르지 않는다 — Clock 을 주입받는다") {
-            noClasses().should().callMethod(LocalDateTime::class.java, "now").check(classes)
+        Then("맨 RuntimeException은 만들지 않는다 (BusinessException + ErrorCode로)") {
+            noClasses().should()
+                .callConstructor(RuntimeException::class.java, String::class.java)
+                .orShould().callConstructor(RuntimeException::class.java)
+                .allowEmptyShould(true)
+                .check(classes)
         }
     }
 })

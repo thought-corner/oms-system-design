@@ -1,4 +1,4 @@
-package com.project.msa.exception
+package com.project.common.exception
 
 class BusinessException(
     val errorCode: ErrorCode,
