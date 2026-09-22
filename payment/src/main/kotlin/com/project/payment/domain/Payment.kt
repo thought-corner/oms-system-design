@@ -1,4 +1,4 @@
-package com.project.msa.domain
+package com.project.payment.domain
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -14,6 +14,7 @@ import java.time.LocalDateTime
 @Table(name = "payments")
 class Payment(
     @Column(unique = true)
+    val sagaId: String,
     val orderId: Long,
     val userId: Long,
     val amount: Long,
@@ -28,4 +29,8 @@ class Payment(
     @Enumerated(EnumType.STRING)
     var status: PaymentStatus = PaymentStatus.PAID
         protected set
+
+    fun transitionTo(next: PaymentStatus) {
+        status = next
+    }
 }
