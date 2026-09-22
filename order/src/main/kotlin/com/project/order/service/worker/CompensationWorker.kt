@@ -1,0 +1,53 @@
+package com.project.order.service.worker
+
+import com.project.order.client.RemoteCallPolicy
+import com.project.order.domain.SagaStatus
+import com.project.order.service.OrderSagaStateService
+import com.project.order.service.SagaOrchestrator
+import com.project.order.service.policy.SagaRecoveryPolicy
+import com.project.order.service.dto.SagaContext
+import org.slf4j.LoggerFactory
+import org.springframework.scheduling.annotation.Scheduled
+import org.springframework.stereotype.Component
+
+@Component
+class CompensationWorker(
+    private val sagaState: OrderSagaStateService,
+    private val sagaOrchestrator: SagaOrchestrator,
+) {
+
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    @Scheduled(fixedDelay = SagaRecoveryPolicy.SWEEP_INTERVAL_MS)
+    fun sweep() {
+        val stuck = sagaState.findStuck()
+        if (stuck.isEmpty()) {
+            return
+        }
+
+        log.info("Saga recovery started: count={}", stuck.size)
+        stuck.forEach { recover(it) }
+    }
+
+    private fun recover(stuck: OrderSagaStateService.StuckSaga) {
+        try {
+            val context = sagaState.contextOf(stuck.sagaId)
+
+            when (stuck.status) {
+                SagaStatus.RUNNING -> resume(stuck, context)
+                else -> sagaOrchestrator.compensate(context, "recovered from ${stuck.status}", RemoteCallPolicy.COMPENSATION_WORKER_ATTEMPTS)
+            }
+        } catch (e: RuntimeException) {
+            log.error("Saga recovery failed: sagaId={}, orderId={}", stuck.sagaId, stuck.orderId, e)
+        }
+    }
+
+    private fun resume(stuck: OrderSagaStateService.StuckSaga, context: SagaContext) {
+        try {
+            sagaOrchestrator.run(context)
+            log.info("Saga resumed and completed: sagaId={}, orderId={}", stuck.sagaId, stuck.orderId)
+        } catch (e: RuntimeException) {
+            log.info("Saga resumed and compensated: sagaId={}, orderId={}, cause={}", stuck.sagaId, stuck.orderId, e.message)
+        }
+    }
+}
