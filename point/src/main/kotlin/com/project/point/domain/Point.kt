@@ -1,7 +1,7 @@
-package com.project.msa.domain
+package com.project.point.domain
 
-import com.project.msa.exception.BusinessException
-import com.project.msa.exception.PointErrorCode
+import com.project.common.exception.BusinessException
+import com.project.point.exception.PointErrorCode
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
@@ -32,5 +32,11 @@ class Point(
         }
 
         this.amount -= amount
+    }
+
+    fun refund(amount: Long) {
+        require(amount >= 0) { "amount=$amount" }
+
+        this.amount += amount
     }
 }
