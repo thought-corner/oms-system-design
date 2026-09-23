@@ -2,10 +2,13 @@ package com.project.product.service
 
 import com.project.product.domain.ProductTransactionHistory
 import com.project.product.domain.ProductTransactionType
+import com.project.product.domain.SagaGuard
+import com.project.product.domain.SagaGuardKind
 import com.project.common.exception.BusinessException
 import com.project.product.exception.ProductErrorCode
 import com.project.product.repository.ProductRepository
 import com.project.product.repository.ProductTransactionHistoryRepository
+import com.project.product.repository.SagaGuardRepository
 import com.project.product.service.dto.BuyCancelCommand
 import com.project.product.service.dto.BuyCommand
 import org.springframework.stereotype.Service
@@ -17,25 +20,36 @@ import java.time.LocalDateTime
 class ProductService(
     private val productRepository: ProductRepository,
     private val historyRepository: ProductTransactionHistoryRepository,
+    private val guardRepository: SagaGuardRepository,
     private val clock: Clock,
 ) {
 
     @Transactional
     fun buy(command: BuyCommand): Long {
+        val guard = lockGuard(command.sagaId, SagaGuardKind.FORWARD)
+        if (guard.kind == SagaGuardKind.CANCEL ||
+            historyRepository.findAllBySagaIdAndTransactionType(command.sagaId, ProductTransactionType.CANCEL).isNotEmpty()
+        ) {
+            throw BusinessException(ProductErrorCode.SAGA_ALREADY_COMPENSATED, "sagaId=${command.sagaId}")
+        }
+
         val purchased = historyRepository.findAllBySagaIdAndTransactionType(command.sagaId, ProductTransactionType.PURCHASE)
         if (purchased.isNotEmpty()) {
             return purchased.sumOf { it.price }
         }
 
         return command.items
-            .sortedBy { it.productId }
-            .sumOf { item ->
-                val product = productRepository.findWithLockById(item.productId)
-                    ?: throw BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND, "productId=${item.productId}")
+            .groupBy({ it.productId }, { it.quantity })
+            .mapValues { (_, quantities) -> quantities.reduce(Math::addExact) }
+            .toSortedMap()
+            .entries
+            .sumOf { (productId, quantity) ->
+                val product = productRepository.findWithLockById(productId)
+                    ?: throw BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND, "productId=$productId")
 
-                val price = product.calculatePrice(item.quantity)
-                product.buy(item.quantity)
-                historyRepository.save(history(command.sagaId, command.orderId, item.productId, item.quantity, price, ProductTransactionType.PURCHASE))
+                product.buy(quantity)
+                val price = product.calculatePrice(quantity)
+                historyRepository.save(history(command.sagaId, command.orderId, productId, quantity, price, ProductTransactionType.PURCHASE))
 
                 price
             }
@@ -43,6 +57,8 @@ class ProductService(
 
     @Transactional
     fun cancel(command: BuyCancelCommand): Long {
+        lockGuard(command.sagaId, SagaGuardKind.CANCEL)
+
         val purchased = historyRepository.findAllBySagaIdAndTransactionType(command.sagaId, ProductTransactionType.PURCHASE)
         if (purchased.isEmpty()) {
             return 0L
@@ -53,15 +69,21 @@ class ProductService(
             return canceled.sumOf { it.price }
         }
 
-        return purchased.sumOf { purchase ->
+        return purchased.sortedBy { it.productId }.sumOf { purchase ->
             val product = productRepository.findWithLockById(purchase.productId)
                 ?: throw BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND, "productId=${purchase.productId}")
 
             product.restore(purchase.quantity)
-            historyRepository.save(history(command.sagaId, command.orderId, purchase.productId, purchase.quantity, purchase.price, ProductTransactionType.CANCEL))
+            historyRepository.save(history(command.sagaId, purchase.orderId, purchase.productId, purchase.quantity, purchase.price, ProductTransactionType.CANCEL))
 
             purchase.price
         }
+    }
+
+    private fun lockGuard(sagaId: String, kind: SagaGuardKind): SagaGuard {
+        guardRepository.insertIfAbsent(sagaId, kind.name, LocalDateTime.now(clock))
+
+        return requireNotNull(guardRepository.findWithLockBySagaId(sagaId)) { "sagaId=$sagaId" }
     }
 
     private fun history(

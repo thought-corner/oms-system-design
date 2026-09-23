@@ -3,6 +3,8 @@ package com.project.product.fixture
 import com.project.product.domain.Product
 import com.project.product.domain.ProductTransactionHistory
 import com.project.product.domain.ProductTransactionType
+import com.project.product.domain.SagaGuard
+import com.project.product.domain.SagaGuardKind
 import java.time.LocalDateTime
 
 object ProductFixture {
@@ -33,4 +35,9 @@ object ProductFixture {
         transactionType = transactionType,
         createdAt = SEED_TIME,
     )
+
+    fun guard(
+        sagaId: String = "saga-1",
+        kind: SagaGuardKind = SagaGuardKind.FORWARD,
+    ): SagaGuard = SagaGuard(sagaId = sagaId, kind = kind, createdAt = SEED_TIME)
 }

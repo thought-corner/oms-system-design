@@ -41,6 +41,19 @@ class RemoteErrorTranslatorTest : BehaviorSpec({
         }
     }
 
+    Given("보상이 먼저 도착해 차감을 거부한 응답") {
+
+        When("번역하면") {
+            val exception = translator.translate(
+                response(HttpStatus.CONFLICT, """{"code":"SAGA_ALREADY_COMPENSATED","message":"이미 보상된 사가입니다."}"""),
+            )
+
+            Then("폴백이 아니라 SAGA_ALREADY_COMPENSATED로 옮긴다") {
+                exception.errorCode shouldBe ProductErrorCode.SAGA_ALREADY_COMPENSATED
+            }
+        }
+    }
+
     Given("모르는 코드를 돌려준 응답") {
 
         When("번역하면") {

@@ -70,7 +70,16 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
 
         Then("`@Transactional`은 service 에만 붙는다") {
             methods().that().areAnnotatedWith(Transactional::class.java)
+                .or().areAnnotatedWith(JAKARTA_TRANSACTIONAL)
                 .should().beDeclaredInClassesThat().resideInAPackage("..service..")
+                .allowEmptyShould(true)
+                .check(classes)
+        }
+
+        Then("클래스 레벨 `@Transactional`도 service 에만 붙는다") {
+            classes().that().areAnnotatedWith(Transactional::class.java)
+                .or().areAnnotatedWith(JAKARTA_TRANSACTIONAL)
+                .should().resideInAPackage("..service..")
                 .allowEmptyShould(true)
                 .check(classes)
         }
@@ -118,8 +127,12 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
             noClasses().should()
                 .callConstructor(RuntimeException::class.java, String::class.java)
                 .orShould().callConstructor(RuntimeException::class.java)
+                .orShould().callConstructor(RuntimeException::class.java, String::class.java, Throwable::class.java)
+                .orShould().callConstructor(RuntimeException::class.java, Throwable::class.java)
                 .allowEmptyShould(true)
                 .check(classes)
         }
     }
 })
+
+private const val JAKARTA_TRANSACTIONAL = "jakarta.transaction.Transactional"

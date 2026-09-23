@@ -9,6 +9,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
 
 private fun stuck(status: SagaStatus, sagaId: String = OrderFixture.DEFAULT_SAGA_ID) =
     OrderSagaStateService.StuckSaga(sagaId = sagaId, orderId = OrderFixture.DEFAULT_ORDER_ID, status = status)
@@ -19,8 +20,11 @@ private class WorkerFixture {
     val worker = CompensationWorker(sagaState, orchestrator)
 
     fun found(vararg sagas: OrderSagaStateService.StuckSaga) = apply {
-        every { sagaState.findStuck() } returns sagas.toList()
-        sagas.forEach { every { sagaState.contextOf(it.sagaId) } returns OrderFixture.context(sagaId = it.sagaId) }
+        every { sagaState.findStuck() } returns sagas.map { it.sagaId }
+        sagas.forEach {
+            every { sagaState.claim(it.sagaId) } returns it
+            every { sagaState.contextOf(it.sagaId) } returns OrderFixture.context(sagaId = it.sagaId)
+        }
     }
 }
 
@@ -33,7 +37,7 @@ class CompensationWorkerTest : BehaviorSpec({
             f.worker.sweep()
 
             Then("아무것도 하지 않는다") {
-                verify(exactly = 0) { f.sagaState.contextOf(any()) }
+                verify(exactly = 0) { f.sagaState.claim(any()) }
                 verify(exactly = 0) { f.orchestrator.run(any()) }
                 verify(exactly = 0) { f.orchestrator.compensate(any(), any(), any()) }
             }
@@ -47,8 +51,26 @@ class CompensationWorkerTest : BehaviorSpec({
         When("워커가 깨어나면") {
             f.worker.sweep()
 
-            Then("정방향을 처음부터 다시 실행한다 — 이미 한 단계는 참여자가 멱등으로 받아낸다") {
-                verify(exactly = 1) { f.orchestrator.run(any()) }
+            Then("처리 직전에 사가를 집고 정방향을 처음부터 다시 실행한다") {
+                verifyOrder {
+                    f.sagaState.claim(OrderFixture.DEFAULT_SAGA_ID)
+                    f.orchestrator.run(any())
+                }
+                verify(exactly = 0) { f.orchestrator.compensate(any(), any(), any()) }
+            }
+        }
+    }
+
+    Given("후보로 골랐지만 그사이 다른 워커가 집어 간 사가") {
+        val f = WorkerFixture().found(stuck(SagaStatus.RUNNING))
+        every { f.sagaState.claim(OrderFixture.DEFAULT_SAGA_ID) } returns null
+
+        When("워커가 깨어나면") {
+            f.worker.sweep()
+
+            Then("건너뛰고 원격 호출을 하지 않는다") {
+                verify(exactly = 0) { f.sagaState.contextOf(any()) }
+                verify(exactly = 0) { f.orchestrator.run(any()) }
                 verify(exactly = 0) { f.orchestrator.compensate(any(), any(), any()) }
             }
         }

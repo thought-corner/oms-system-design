@@ -43,7 +43,8 @@ object OrderFixture {
     fun saga(
         sagaId: String = DEFAULT_SAGA_ID,
         orderId: Long = DEFAULT_ORDER_ID,
-    ): OrderSaga = OrderSaga(sagaId = sagaId, orderId = orderId, createdAt = FIXED_TIME)
+        createdAt: LocalDateTime = FIXED_TIME,
+    ): OrderSaga = OrderSaga(sagaId = sagaId, orderId = orderId, createdAt = createdAt)
 
     fun context(
         sagaId: String = DEFAULT_SAGA_ID,

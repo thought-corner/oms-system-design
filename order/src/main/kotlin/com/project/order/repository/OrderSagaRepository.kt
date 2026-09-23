@@ -14,11 +14,17 @@ interface OrderSagaRepository : JpaRepository<OrderSaga, Long> {
 
     fun findBySagaId(sagaId: String): OrderSaga?
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints(QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
     fun findByStatusInAndUpdatedAtLessThanOrderByUpdatedAtAsc(
         statuses: Collection<SagaStatus>,
         threshold: LocalDateTime,
         limit: Limit,
     ): List<OrderSaga>
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
+    fun findWithLockBySagaIdAndStatusInAndUpdatedAtLessThan(
+        sagaId: String,
+        statuses: Collection<SagaStatus>,
+        threshold: LocalDateTime,
+    ): OrderSaga?
 }

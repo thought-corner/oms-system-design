@@ -37,6 +37,7 @@ private class SagaStateFixture(
 
     fun withOrder(order: Order) = apply {
         every { orderRepository.findWithLockById(OrderFixture.DEFAULT_ORDER_ID) } returns order
+        every { orderRepository.findWithWaitingLockById(OrderFixture.DEFAULT_ORDER_ID) } returns order
     }
 
     fun withSaga(saga: OrderSaga) = apply {
@@ -162,9 +163,11 @@ class OrderSagaStateServiceTest : BehaviorSpec({
         When("성공으로 닫으면") {
             f.sagaState.succeed(OrderFixture.DEFAULT_SAGA_ID, OrderFixture.DEFAULT_ORDER_ID)
 
-            Then("주문은 COMPLETED, 사가는 SUCCEEDED") {
+            Then("주문 행을 NOWAIT가 아니라 대기형 잠금으로 읽어 주문은 COMPLETED, 사가는 SUCCEEDED") {
                 order.status shouldBe OrderStatus.COMPLETED
                 saga.status shouldBe SagaStatus.SUCCEEDED
+                verify(exactly = 1) { f.orderRepository.findWithWaitingLockById(OrderFixture.DEFAULT_ORDER_ID) }
+                verify(exactly = 0) { f.orderRepository.findWithLockById(any()) }
             }
         }
     }
@@ -204,7 +207,8 @@ class OrderSagaStateServiceTest : BehaviorSpec({
         When("보상이 끝나면") {
             f.sagaState.compensated(OrderFixture.DEFAULT_SAGA_ID, OrderFixture.DEFAULT_ORDER_ID)
 
-            Then("주문은 FAILED, 사가는 COMPENSATED이고 성공 단계 표시는 그대로 남는다") {
+            Then("대기형 잠금으로 읽어 주문은 FAILED, 사가는 COMPENSATED이고 성공 단계 표시는 그대로 남는다") {
+                verify(exactly = 0) { f.orderRepository.findWithLockById(any()) }
                 order.status shouldBe OrderStatus.FAILED
                 saga.status shouldBe SagaStatus.COMPENSATED
                 saga.stockDone shouldBe true
@@ -224,6 +228,42 @@ class OrderSagaStateServiceTest : BehaviorSpec({
                 saga.status shouldBe SagaStatus.COMPENSATION_FAILED
                 saga.attempts shouldBe 1
                 saga.lastError shouldBe "product down"
+            }
+        }
+    }
+
+    Given("다른 워커가 이미 집었거나 더 이상 멈춰 있지 않은 사가") {
+        val f = SagaStateFixture()
+        every {
+            f.sagaRepository.findWithLockBySagaIdAndStatusInAndUpdatedAtLessThan(OrderFixture.DEFAULT_SAGA_ID, any(), any())
+        } returns null
+
+        When("집으려 하면") {
+            val claimed = f.sagaState.claim(OrderFixture.DEFAULT_SAGA_ID)
+
+            Then("null을 돌려줘 이번 스윕에서 건너뛴다") {
+                claimed.shouldBeNull()
+            }
+        }
+    }
+
+    Given("60초 넘게 멈춘 RUNNING 사가") {
+        val saga = OrderFixture.saga(createdAt = OrderFixture.FIXED_TIME.minusMinutes(5))
+        val f = SagaStateFixture()
+        every {
+            f.sagaRepository.findWithLockBySagaIdAndStatusInAndUpdatedAtLessThan(
+                OrderFixture.DEFAULT_SAGA_ID,
+                any(),
+                OrderFixture.FIXED_TIME.minusSeconds(60),
+            )
+        } returns saga
+
+        When("집으면") {
+            val claimed = f.sagaState.claim(OrderFixture.DEFAULT_SAGA_ID)
+
+            Then("updated_at을 지금으로 갱신해 다른 워커의 임계에서 빠지고 상태를 돌려준다") {
+                claimed?.status shouldBe SagaStatus.RUNNING
+                saga.updatedAt shouldBe OrderFixture.FIXED_TIME
             }
         }
     }

@@ -78,13 +78,25 @@ class OrderSagaStateService(
         )
     }
 
-    @Transactional
-    fun findStuck(): List<StuckSaga> =
+    @Transactional(readOnly = true)
+    fun findStuck(): List<String> =
         orderSagaRepository.findByStatusInAndUpdatedAtLessThanOrderByUpdatedAtAsc(
             RECOVERABLE,
-            now().minus(SagaRecoveryPolicy.STUCK_THRESHOLD),
+            stuckThreshold(),
             Limit.of(SagaRecoveryPolicy.BATCH_SIZE),
-        ).map { StuckSaga(it.sagaId, it.orderId, it.status) }
+        ).map { it.sagaId }
+
+    @Transactional
+    fun claim(sagaId: String): StuckSaga? {
+        val saga = orderSagaRepository.findWithLockBySagaIdAndStatusInAndUpdatedAtLessThan(
+            sagaId,
+            RECOVERABLE,
+            stuckThreshold(),
+        ) ?: return null
+
+        saga.claim(now())
+        return StuckSaga(saga.sagaId, saga.orderId, saga.status)
+    }
 
     @Transactional
     fun stockCompleted(sagaId: String, totalPrice: Long) = saga(sagaId).stockCompleted(totalPrice, now())
@@ -97,7 +109,7 @@ class OrderSagaStateService(
 
     @Transactional
     fun succeed(sagaId: String, orderId: Long) {
-        val order = orderRepository.findWithLockById(orderId)
+        val order = orderRepository.findWithWaitingLockById(orderId)
             ?: throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=$orderId")
 
         val next = orderStateMachine.transition(orderId, order.status, OrderEvent.COMPLETE)
@@ -109,15 +121,12 @@ class OrderSagaStateService(
     fun beginCompensation(sagaId: String, error: String?) {
         val saga = saga(sagaId)
         saga.recordError(error)
-
-        if (saga.status != SagaStatus.COMPENSATING) {
-            advance(saga, SagaEvent.COMPENSATE)
-        }
+        advance(saga, SagaEvent.COMPENSATE)
     }
 
     @Transactional
     fun compensated(sagaId: String, orderId: Long) {
-        val order = orderRepository.findWithLockById(orderId)
+        val order = orderRepository.findWithWaitingLockById(orderId)
             ?: throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=$orderId")
 
         val next = orderStateMachine.transition(orderId, order.status, OrderEvent.FAIL)
@@ -160,6 +169,8 @@ class OrderSagaStateService(
     }
 
     private fun now(): LocalDateTime = LocalDateTime.now(clock)
+
+    private fun stuckThreshold(): LocalDateTime = now().minus(SagaRecoveryPolicy.STUCK_THRESHOLD)
 
     data class StuckSaga(
         val sagaId: String,

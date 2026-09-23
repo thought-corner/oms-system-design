@@ -3,6 +3,8 @@ package com.project.point.fixture
 import com.project.point.domain.Point
 import com.project.point.domain.PointTransactionHistory
 import com.project.point.domain.PointTransactionType
+import com.project.point.domain.SagaGuard
+import com.project.point.domain.SagaGuardKind
 import java.time.LocalDateTime
 
 object PointFixture {
@@ -29,4 +31,9 @@ object PointFixture {
         transactionType = transactionType,
         createdAt = SEED_TIME,
     )
+
+    fun guard(
+        sagaId: String = "saga-1",
+        kind: SagaGuardKind = SagaGuardKind.FORWARD,
+    ): SagaGuard = SagaGuard(sagaId = sagaId, kind = kind, createdAt = SEED_TIME)
 }

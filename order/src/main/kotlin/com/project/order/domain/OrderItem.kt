@@ -22,8 +22,12 @@ class OrderItem(
         protected set
 
     init {
-        if (quantity <= 0) {
+        if (quantity !in 1..MAX_QUANTITY) {
             throw BusinessException(OrderErrorCode.INVALID_ORDER, "productId=$productId, quantity=$quantity")
         }
+    }
+
+    companion object {
+        const val MAX_QUANTITY: Long = 1_000
     }
 }

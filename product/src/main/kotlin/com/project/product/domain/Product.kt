@@ -18,7 +18,7 @@ class Product(
     var quantity: Long = quantity
         protected set
 
-    fun calculatePrice(quantity: Long): Long = price * quantity
+    fun calculatePrice(quantity: Long): Long = Math.multiplyExact(price, quantity)
 
     fun buy(quantity: Long) {
         require(quantity > 0) { "quantity=$quantity" }

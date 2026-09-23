@@ -30,6 +30,14 @@ class SagaStateMachineTest : BehaviorSpec({
             }
         }
 
+        When("COMPENSATING에 COMPENSATE를 다시 보내면") {
+            val next = stateMachine.transition("saga-1", SagaStatus.COMPENSATING, SagaEvent.COMPENSATE)
+
+            Then("거부하지 않고 COMPENSATING에 머문다 — 워커가 멈춘 보상을 다시 시작하는 경로") {
+                next shouldBe SagaStatus.COMPENSATING
+            }
+        }
+
         When("COMPENSATING에 COMPENSATION_DONE을 보내면") {
             val next = stateMachine.transition("saga-1", SagaStatus.COMPENSATING, SagaEvent.COMPENSATION_DONE)
 

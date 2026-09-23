@@ -35,11 +35,12 @@ class SagaOrchestrator(
     fun run(context: SagaContext) {
         try {
             forward(context)
-            sagaState.succeed(context.sagaId, context.orderId)
         } catch (e: RuntimeException) {
             compensate(context, e.message, RemoteCallPolicy.COMPENSATION_INLINE_ATTEMPTS)
             throw e
         }
+
+        sagaState.succeed(context.sagaId, context.orderId)
     }
 
     fun compensate(context: SagaContext, cause: String?, maxAttempts: Int) {

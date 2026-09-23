@@ -12,4 +12,7 @@ interface OrderRepository : JpaRepository<Order, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints(QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
     fun findWithLockById(id: Long): Order?
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findWithWaitingLockById(id: Long): Order?
 }

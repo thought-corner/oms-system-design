@@ -1,6 +1,8 @@
 package com.project.payment.fixture
 
 import com.project.payment.domain.Payment
+import com.project.payment.domain.SagaGuard
+import com.project.payment.domain.SagaGuardKind
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDateTime
@@ -24,4 +26,9 @@ object PaymentFixture {
         amount: Long = DEFAULT_AMOUNT,
         paidAt: LocalDateTime = FIXED_PAID_AT,
     ): Payment = Payment(sagaId = sagaId, orderId = orderId, userId = userId, amount = amount, paidAt = paidAt)
+
+    fun guard(
+        sagaId: String = DEFAULT_SAGA_ID,
+        kind: SagaGuardKind = SagaGuardKind.FORWARD,
+    ): SagaGuard = SagaGuard(sagaId = sagaId, kind = kind, createdAt = FIXED_PAID_AT)
 }

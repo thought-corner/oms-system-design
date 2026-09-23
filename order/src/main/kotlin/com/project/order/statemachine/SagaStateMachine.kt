@@ -65,6 +65,9 @@ class SagaStateMachine {
             .and()
             .withExternal()
             .source(SagaStatus.COMPENSATION_FAILED).target(SagaStatus.COMPENSATING).event(SagaEvent.COMPENSATE)
+            .and()
+            .withInternal()
+            .source(SagaStatus.COMPENSATING).event(SagaEvent.COMPENSATE)
 
         return builder.build()
     }

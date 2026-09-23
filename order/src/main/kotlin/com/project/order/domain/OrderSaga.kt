@@ -88,6 +88,10 @@ class OrderSaga(
         this.attempts += 1
     }
 
+    fun claim(at: LocalDateTime) {
+        touch(at)
+    }
+
     private fun touch(at: LocalDateTime) {
         this.updatedAt = at
     }

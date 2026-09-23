@@ -108,6 +108,26 @@ class SagaOrchestratorTest : BehaviorSpec({
         }
     }
 
+    Given("세 단계가 모두 성공했지만 성공 기록이 주문 행 경합으로 실패한 주문") {
+        val f = Fixture()
+        every { f.sagaState.start(OrderFixture.DEFAULT_ORDER_ID) } returns OrderFixture.context()
+        every { f.product.buy(any()) } returns OrderFixture.DEFAULT_TOTAL_PRICE
+        every { f.point.use(any()) } just Runs
+        every { f.payment.pay(any()) } returns PayApiResponse(paymentId = 1L, paidAt = OrderFixture.FIXED_TIME)
+        every { f.sagaState.succeed(any(), any()) } throws IllegalStateException("lock wait timeout")
+
+        When("결제를 요청하면") {
+            shouldThrow<IllegalStateException> { f.orchestrator.placeOrder(CommandFixture.placeOrderCommand()) }
+
+            Then("성공한 세 단계를 보상하지 않는다 — 사가는 RUNNING으로 남아 워커가 전진 복구한다") {
+                verify(exactly = 0) { f.sagaState.beginCompensation(any(), any()) }
+                verify(exactly = 0) { f.payment.cancel(any(), any()) }
+                verify(exactly = 0) { f.point.cancel(any(), any()) }
+                verify(exactly = 0) { f.product.cancel(any(), any()) }
+            }
+        }
+    }
+
     Given("재고가 부족한 주문") {
         val f = Fixture()
         every { f.sagaState.start(OrderFixture.DEFAULT_ORDER_ID) } returns OrderFixture.context()

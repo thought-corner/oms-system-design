@@ -2,20 +2,28 @@ package com.project.payment.service
 
 import com.project.payment.domain.Payment
 import com.project.payment.domain.PaymentStatus
+import com.project.payment.domain.SagaGuardKind
 import com.project.payment.fixture.PaymentFixture
 import com.project.payment.fixture.withId
 import com.project.common.exception.BusinessException
 import com.project.payment.exception.PaymentErrorCode
 import com.project.payment.repository.PaymentRepository
+import com.project.payment.repository.SagaGuardRepository
 import com.project.payment.service.dto.PayCancelCommand
 import com.project.payment.service.dto.PayCommand
 import com.project.payment.statemachine.PaymentStateMachine
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
+import org.springframework.dao.DataIntegrityViolationException
+import java.sql.SQLIntegrityConstraintViolationException
 
 private fun payCommand(sagaId: String = PaymentFixture.DEFAULT_SAGA_ID) =
     PayCommand(
@@ -25,11 +33,17 @@ private fun payCommand(sagaId: String = PaymentFixture.DEFAULT_SAGA_ID) =
         amount = PaymentFixture.DEFAULT_AMOUNT,
     )
 
+private fun guardRepository(kind: SagaGuardKind = SagaGuardKind.FORWARD): SagaGuardRepository =
+    mockk<SagaGuardRepository>().also {
+        every { it.insertIfAbsent(any(), any(), any()) } just Runs
+        every { it.findWithLockBySagaId(any()) } answers { PaymentFixture.guard(sagaId = firstArg(), kind = kind) }
+    }
+
 class PaymentServiceTest : BehaviorSpec({
 
     Given("같은 sagaId로 이미 결제한 이력이 있는 주문") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
         every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns PaymentFixture.payment().withId(7L)
 
         When("같은 sagaId로 결제를 다시 요청하면") {
@@ -45,16 +59,23 @@ class PaymentServiceTest : BehaviorSpec({
 
     Given("결제 이력이 없는 주문") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val guardRepository = guardRepository()
+        val service = PaymentService(paymentRepository, guardRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
         every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns null
-        every { paymentRepository.findByOrderIdAndStatus(any(), PaymentStatus.PAID) } returns null
+        every { paymentRepository.findByPaidOrderId(any()) } returns null
         every { paymentRepository.save(any()) } answers { firstArg<Payment>().withId(1L) }
 
         When("결제를 요청하면") {
             val result = service.pay(payCommand())
 
-            Then("Clock으로 찍은 시각으로 결제 1건을 기록한다") {
+            Then("사가 가드를 FORWARD로 잡은 뒤 Clock으로 찍은 시각으로 결제 1건을 기록한다") {
                 result.paymentId shouldBe 1L
+                verifyOrder {
+                    guardRepository.insertIfAbsent(PaymentFixture.DEFAULT_SAGA_ID, SagaGuardKind.FORWARD.name, any())
+                    guardRepository.findWithLockBySagaId(PaymentFixture.DEFAULT_SAGA_ID)
+                    paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID)
+                    paymentRepository.findByPaidOrderId(PaymentFixture.DEFAULT_ORDER_ID)
+                }
                 result.paidAt shouldBe PaymentFixture.FIXED_PAID_AT
                 verify(exactly = 1) { paymentRepository.save(match<Payment> { it.status == PaymentStatus.PAID }) }
             }
@@ -63,13 +84,15 @@ class PaymentServiceTest : BehaviorSpec({
 
     Given("결제 이력이 없는 sagaId") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val guardRepository = guardRepository(SagaGuardKind.CANCEL)
+        val service = PaymentService(paymentRepository, guardRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
         every { paymentRepository.findBySagaId("saga-none") } returns null
 
         When("보상을 요청하면") {
             service.cancel(PayCancelCommand(sagaId = "saga-none", orderId = 1L))
 
-            Then("되돌릴 것이 없으므로 아무것도 하지 않고 실패하지 않는다") {
+            Then("CANCEL 가드만 남기고 실패하지 않는다") {
+                verify(exactly = 1) { guardRepository.insertIfAbsent("saga-none", SagaGuardKind.CANCEL.name, any()) }
                 verify(exactly = 0) { paymentRepository.save(any()) }
             }
         }
@@ -77,15 +100,16 @@ class PaymentServiceTest : BehaviorSpec({
 
     Given("결제된 주문") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
         val payment = PaymentFixture.payment().withId(1L)
         every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns payment
 
         When("보상을 요청하면") {
             service.cancel(PayCancelCommand(sagaId = PaymentFixture.DEFAULT_SAGA_ID, orderId = 1L))
 
-            Then("결제가 CANCELED가 된다") {
+            Then("결제가 CANCELED가 되고 주문당 PAID 제약에서 빠진다") {
                 payment.status shouldBe PaymentStatus.CANCELED
+                payment.paidOrderId.shouldBeNull()
             }
         }
 
@@ -100,10 +124,10 @@ class PaymentServiceTest : BehaviorSpec({
 
     Given("다른 사가가 이미 결제한 주문") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
         every { paymentRepository.findBySagaId("saga-2") } returns null
         every {
-            paymentRepository.findByOrderIdAndStatus(PaymentFixture.DEFAULT_ORDER_ID, PaymentStatus.PAID)
+            paymentRepository.findByPaidOrderId(PaymentFixture.DEFAULT_ORDER_ID)
         } returns PaymentFixture.payment().withId(1L)
 
         When("새 사가로 결제를 요청하면") {
@@ -116,18 +140,59 @@ class PaymentServiceTest : BehaviorSpec({
         }
     }
 
-    Given("취소된 결제만 있는 주문") {
+    Given("보상이 먼저 도착해 CANCEL 가드가 남은 sagaId") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
-        every { paymentRepository.findBySagaId("saga-3") } returns null
-        every { paymentRepository.findByOrderIdAndStatus(any(), PaymentStatus.PAID) } returns null
-        every { paymentRepository.save(any()) } answers { firstArg<Payment>().withId(2L) }
+        val service = PaymentService(
+            paymentRepository,
+            guardRepository(SagaGuardKind.CANCEL),
+            PaymentStateMachine(),
+            PaymentFixture.FIXED_CLOCK,
+        )
+        every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns null
 
-        When("새 사가로 다시 결제하면") {
-            val result = service.pay(payCommand(sagaId = "saga-3"))
+        When("늦게 도착한 결제 요청이 오면") {
+            val exception = shouldThrow<BusinessException> { service.pay(payCommand()) }
 
-            Then("재결제가 허용된다 — 제약은 주문당 PAID 1건이다") {
-                result.paymentId shouldBe 2L
+            Then("SAGA_ALREADY_COMPENSATED로 거부하고 외부 승인을 기다리지 않는다") {
+                exception.errorCode shouldBe PaymentErrorCode.SAGA_ALREADY_COMPENSATED
+                verify(exactly = 0) { paymentRepository.save(any()) }
+            }
+        }
+    }
+
+    Given("같은 sagaId의 결제가 이미 취소된 주문") {
+        val paymentRepository = mockk<PaymentRepository>()
+        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val canceled = PaymentFixture.payment().withId(1L).also { it.transitionTo(PaymentStatus.CANCELED) }
+        every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns canceled
+
+        When("같은 sagaId로 결제 요청이 다시 오면") {
+            val exception = shouldThrow<BusinessException> { service.pay(payCommand()) }
+
+            Then("취소된 결제를 성공으로 돌려주지 않고 SAGA_ALREADY_COMPENSATED로 거부한다") {
+                exception.errorCode shouldBe PaymentErrorCode.SAGA_ALREADY_COMPENSATED
+                verify(exactly = 0) { paymentRepository.save(any()) }
+            }
+        }
+    }
+
+    Given("외부 승인을 기다리는 동안 다른 사가가 같은 주문을 먼저 결제한 상태") {
+        val paymentRepository = mockk<PaymentRepository>()
+        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        every { paymentRepository.findBySagaId("saga-4") } returns null
+        every { paymentRepository.findByPaidOrderId(any()) } returns null
+        every { paymentRepository.save(any()) } throws DataIntegrityViolationException(
+            "duplicate",
+            SQLIntegrityConstraintViolationException(
+                "Duplicate entry '1' for key 'payments.${Payment.UK_PAID_ORDER_ID}'",
+            ),
+        )
+
+        When("결제를 기록하면") {
+            val exception = shouldThrow<BusinessException> { service.pay(payCommand(sagaId = "saga-4")) }
+
+            Then("paid_order_id unique 위반을 ALREADY_PAID로 번역한다") {
+                exception.errorCode shouldBe PaymentErrorCode.ALREADY_PAID
             }
         }
     }

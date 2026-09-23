@@ -20,17 +20,18 @@ class CompensationWorker(
 
     @Scheduled(fixedDelay = SagaRecoveryPolicy.SWEEP_INTERVAL_MS)
     fun sweep() {
-        val stuck = sagaState.findStuck()
-        if (stuck.isEmpty()) {
+        val candidates = sagaState.findStuck()
+        if (candidates.isEmpty()) {
             return
         }
 
-        log.info("Saga recovery started: count={}", stuck.size)
-        stuck.forEach { recover(it) }
+        log.info("Saga recovery started: count={}", candidates.size)
+        candidates.forEach { recover(it) }
     }
 
-    private fun recover(stuck: OrderSagaStateService.StuckSaga) {
+    private fun recover(sagaId: String) {
         try {
+            val stuck = sagaState.claim(sagaId) ?: return
             val context = sagaState.contextOf(stuck.sagaId)
 
             when (stuck.status) {
@@ -38,7 +39,7 @@ class CompensationWorker(
                 else -> sagaOrchestrator.compensate(context, "recovered from ${stuck.status}", RemoteCallPolicy.COMPENSATION_WORKER_ATTEMPTS)
             }
         } catch (e: RuntimeException) {
-            log.error("Saga recovery failed: sagaId={}, orderId={}", stuck.sagaId, stuck.orderId, e)
+            log.error("Saga recovery failed: sagaId={}", sagaId, e)
         }
     }
 
@@ -47,7 +48,7 @@ class CompensationWorker(
             sagaOrchestrator.run(context)
             log.info("Saga resumed and completed: sagaId={}, orderId={}", stuck.sagaId, stuck.orderId)
         } catch (e: RuntimeException) {
-            log.info("Saga resumed and compensated: sagaId={}, orderId={}, cause={}", stuck.sagaId, stuck.orderId, e.message)
+            log.info("Saga resume failed: sagaId={}, orderId={}, cause={}", stuck.sagaId, stuck.orderId, e.message)
         }
     }
 }
