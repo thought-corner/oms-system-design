@@ -48,7 +48,12 @@ class PaymentServiceConcurrencyTest : BehaviorSpec() {
         Given("결제가 가드를 쥔 채 아직 커밋하지 않은 사가") {
             val sagaId = "saga-concurrency-payment"
             val orderId = 9001L
-            val service = PaymentService(paymentRepository, guardRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+            val service = PaymentService(
+                paymentRepository,
+                SagaGuardLock(guardRepository, PaymentFixture.FIXED_CLOCK),
+                PaymentStateMachine(),
+                PaymentFixture.FIXED_CLOCK,
+            )
             val executor = Executors.newFixedThreadPool(2)
             val locked = CountDownLatch(1)
             val release = CountDownLatch(1)

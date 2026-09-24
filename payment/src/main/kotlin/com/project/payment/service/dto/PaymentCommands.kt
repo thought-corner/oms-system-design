@@ -1,5 +1,6 @@
 package com.project.payment.service.dto
 
+import com.project.payment.domain.Payment
 import java.time.LocalDateTime
 
 data class PayCommand(
@@ -12,7 +13,13 @@ data class PayCommand(
 data class PayResult(
     val paymentId: Long,
     val paidAt: LocalDateTime,
-)
+) {
+
+    companion object {
+        fun from(payment: Payment): PayResult =
+            PayResult(paymentId = requireNotNull(payment.id), paidAt = payment.paidAt)
+    }
+}
 
 data class PayCancelCommand(
     val sagaId: String,
