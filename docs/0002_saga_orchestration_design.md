@@ -108,7 +108,7 @@
     - `COMPLETED` — 결제가 끝난 상태로, 결제 단계가 성공하면 들어간다.
     - `FAILED` — 보상까지 끝나 결제 전으로 돌아간 상태다.
 
-![주문 상태 전이도. CREATED에서 PLACE로 PLACING, PLACING에서 COMPLETE로 COMPLETED이고 FAIL로 FAILED가 된다. 보상이 실패하면 PLACING에 머물고 워커가 재시도한다. FAILED에서 다시 PLACE로 PLACING으로 돌아가 재결제할 수 있다](images/06-order-state.svg)
+![주문 상태 전이도. CREATED에서 PLACE로 PLACING, PLACING에서 COMPLETE로 COMPLETED이고 FAIL로 FAILED가 된다. 보상이 실패하면 PLACING에 머물고 워커가 재시도한다. FAILED에서 다시 PLACE로 PLACING으로 돌아가 재결제할 수 있다](flow/06-주문-상태.svg)
 
 - 보상이 실패했을 때 무엇으로 닫는지는 따로 갈렸다.
     - **`PLACING`에 머문다.** `FAILED`의 뜻이 거짓이 되지 않고, 이어받을 대상이 `status = 'PLACING' AND updated_at < now() - 임계` 한 줄로 떨어진다. 대신 그 주문은 사람이나 워커가 정리할 때까지 재결제할 수 없다.
@@ -188,32 +188,32 @@
 
 주문 생성은 Order 서버의 로컬 트랜잭션 하나이고 재고와 포인트와 결제를 건드리지 않으므로 분리 전후가 같다.
 
-![주문 생성 시퀀스. Client가 POST /order를 호출하면 Order 서버가 로컬 트랜잭션 하나로 주문과 항목을 저장하고 orderId를 돌려준다](images/01-create-order.svg)
+![주문 생성 시퀀스. Client가 POST /order를 호출하면 Order 서버가 로컬 트랜잭션 하나로 주문과 항목을 저장하고 orderId를 돌려준다](flow/01-주문-생성.svg)
 
 ### 11.2 해피 케이스
 
-![해피 케이스 시퀀스. Order 서버가 PLACING으로 전이한 뒤 재고 차감과 포인트 차감과 결제를 차례로 호출하고 모두 성공하면 COMPLETED로 전이해 200을 반환한다](images/02-place-happy.svg)
+![해피 케이스 시퀀스. Order 서버가 PLACING으로 전이한 뒤 재고 차감과 포인트 차감과 결제를 차례로 호출하고 모두 성공하면 COMPLETED로 전이해 200을 반환한다](flow/02-주문-결제-정상.svg)
 
 ### 11.3 롤백 A — 재고 부족
 
 첫 단계가 실패해 되돌릴 것이 없어도 보상은 세 곳 모두에 보낸다.
 참여자가 결제 없음과 `0`으로 답하므로 실제로 바뀌는 것은 없다.
 
-![롤백 A 시퀀스. 재고 차감이 실패해도 결제 취소와 포인트 환불과 재고 복구를 역순으로 보내고, 참여자가 모두 되돌릴 것이 없다고 답하면 주문을 FAILED로 바꾸고 409 INSUFFICIENT_STOCK을 반환한다](images/03-rollback-stock.svg)
+![롤백 A 시퀀스. 재고 차감이 실패해도 결제 취소와 포인트 환불과 재고 복구를 역순으로 보내고, 참여자가 모두 되돌릴 것이 없다고 답하면 주문을 FAILED로 바꾸고 409 INSUFFICIENT_STOCK을 반환한다](flow/03-재고-실패-롤백.svg)
 
 ### 11.4 롤백 B — 잔액 부족
 
 재고는 이미 줄어든 상태다. 세 곳에 보상을 보내 재고를 되돌린 뒤에야 클라이언트에게 실패를 알린다.
 결제와 포인트는 하지 않았으므로 참여자가 결제 없음과 `0`으로 답한다.
 
-![롤백 B 시퀀스. 재고 차감 성공 후 포인트 차감이 실패하면 결제 취소와 포인트 환불과 재고 복구를 역순으로 보내 재고를 되돌린 뒤 FAILED로 바꾸고 409 INSUFFICIENT_POINT를 반환한다](images/04-rollback-point.svg)
+![롤백 B 시퀀스. 재고 차감 성공 후 포인트 차감이 실패하면 결제 취소와 포인트 환불과 재고 복구를 역순으로 보내 재고를 되돌린 뒤 FAILED로 바꾸고 409 INSUFFICIENT_POINT를 반환한다](flow/04-포인트-실패-롤백.svg)
 
 ### 11.5 롤백 C — 결제 실패
 
 가장 비싼 경로다. 결제 취소, 포인트 환불, 재고 복구를 역순으로 부른다.
 결제가 타임아웃으로 실패했지만 참여자 쪽에 `PAID`가 생겼다면 결제 취소가 그것을 `CANCELED`로 돌린다.
 
-![롤백 C 시퀀스. 재고와 포인트가 모두 차감된 뒤 결제가 실패하면 결제 취소와 포인트 환불과 재고 복구 순으로 보상하고 FAILED로 바꾼 뒤 409 PAYMENT_FAILED를 반환한다](images/05-rollback-payment.svg)
+![롤백 C 시퀀스. 재고와 포인트가 모두 차감된 뒤 결제가 실패하면 결제 취소와 포인트 환불과 재고 복구 순으로 보상하고 FAILED로 바꾼 뒤 409 PAYMENT_FAILED를 반환한다](flow/05-결제-실패-롤백.svg)
 
 ### 11.6 실패 지점별 최종 상태
 
