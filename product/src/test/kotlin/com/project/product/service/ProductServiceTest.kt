@@ -1,9 +1,9 @@
 package com.project.product.service
 
+import com.project.common.exception.BusinessException
 import com.project.product.domain.ProductTransactionHistory
 import com.project.product.domain.ProductTransactionType
 import com.project.product.domain.SagaGuardKind
-import com.project.common.exception.BusinessException
 import com.project.product.exception.ProductErrorCode
 import com.project.product.fixture.ProductFixture
 import com.project.product.repository.ProductRepository
@@ -15,6 +15,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.mockk.Called
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -36,12 +37,19 @@ private fun guardRepository(kind: SagaGuardKind = SagaGuardKind.FORWARD): SagaGu
         every { it.findWithLockBySagaId(any()) } answers { ProductFixture.guard(sagaId = firstArg(), kind = kind) }
     }
 
+private fun productService(
+    productRepository: ProductRepository,
+    historyRepository: ProductTransactionHistoryRepository,
+    guardRepository: SagaGuardRepository = guardRepository(),
+): ProductService =
+    ProductService(productRepository, historyRepository, SagaGuardLock(guardRepository, FIXED_CLOCK), FIXED_CLOCK)
+
 class ProductServiceTest : BehaviorSpec({
 
     Given("차감 이력이 없고 존재하지 않는 상품 9") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository)
         every { historyRepository.findAllBySagaIdAndTransactionType(any(), any()) } returns emptyList()
         every { productRepository.findWithLockById(9L) } returns null
 
@@ -58,7 +66,7 @@ class ProductServiceTest : BehaviorSpec({
     Given("재고가 0인 상품 2") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository)
         val product = ProductFixture.soldOut(id = 2L)
         every { historyRepository.findAllBySagaIdAndTransactionType(any(), any()) } returns emptyList()
         every { productRepository.findWithLockById(2L) } returns product
@@ -78,7 +86,7 @@ class ProductServiceTest : BehaviorSpec({
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
         val guardRepository = guardRepository()
-        val service = ProductService(productRepository, historyRepository, guardRepository, FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository, guardRepository)
         val product = ProductFixture.product(id = 2L, price = 200L)
         every { historyRepository.findAllBySagaIdAndTransactionType(any(), any()) } returns emptyList()
         every { productRepository.findWithLockById(2L) } returns product
@@ -107,7 +115,7 @@ class ProductServiceTest : BehaviorSpec({
     Given("재고 100 · 단가 200인 상품 2가 두 줄로 나뉘어 들어온 차감 요청") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository)
         val product = ProductFixture.product(id = 2L, price = 200L)
         every { historyRepository.findAllBySagaIdAndTransactionType(any(), any()) } returns emptyList()
         every { productRepository.findWithLockById(2L) } returns product
@@ -135,7 +143,7 @@ class ProductServiceTest : BehaviorSpec({
     Given("같은 상품 2가 합계가 Long 범위를 넘는 세 줄로 들어온 차감 요청") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository)
         every { historyRepository.findAllBySagaIdAndTransactionType(any(), any()) } returns emptyList()
         val command = BuyCommand(
             sagaId = "saga-1",
@@ -160,7 +168,7 @@ class ProductServiceTest : BehaviorSpec({
     Given("같은 sagaId로 이미 차감한 이력이 있는 상품") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository)
         every {
             historyRepository.findAllBySagaIdAndTransactionType("saga-1", ProductTransactionType.CANCEL)
         } returns emptyList()
@@ -182,15 +190,15 @@ class ProductServiceTest : BehaviorSpec({
     Given("보상이 먼저 도착해 CANCEL 가드가 남은 sagaId") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(SagaGuardKind.CANCEL), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository, guardRepository(SagaGuardKind.CANCEL))
 
         When("늦게 도착한 차감 요청이 오면") {
             val exception = shouldThrow<BusinessException> { service.buy(buyCommand(2L, 3L)) }
 
-            Then("SAGA_ALREADY_COMPENSATED로 거부하고 재고를 건드리지 않는다") {
+            Then("SAGA_ALREADY_COMPENSATED로 거부하고 이력도 재고도 건드리지 않는다") {
                 exception.errorCode shouldBe ProductErrorCode.SAGA_ALREADY_COMPENSATED
-                verify(exactly = 0) { productRepository.findWithLockById(any()) }
-                verify(exactly = 0) { historyRepository.save(any()) }
+                verify { productRepository wasNot Called }
+                verify { historyRepository wasNot Called }
             }
         }
     }
@@ -198,7 +206,7 @@ class ProductServiceTest : BehaviorSpec({
     Given("차감한 뒤 이미 되돌린 sagaId") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository)
         every {
             historyRepository.findAllBySagaIdAndTransactionType("saga-1", ProductTransactionType.CANCEL)
         } returns listOf(ProductFixture.history(transactionType = ProductTransactionType.CANCEL))
@@ -217,7 +225,7 @@ class ProductServiceTest : BehaviorSpec({
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
         val guardRepository = guardRepository(SagaGuardKind.CANCEL)
-        val service = ProductService(productRepository, historyRepository, guardRepository, FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository, guardRepository)
         every { historyRepository.findAllBySagaIdAndTransactionType("saga-none", any()) } returns emptyList()
 
         When("보상을 요청하면") {
@@ -234,7 +242,7 @@ class ProductServiceTest : BehaviorSpec({
     Given("상품 3과 상품 1을 차감한 이력이 있고 아직 되돌리지 않은 sagaId") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository)
         val product1 = ProductFixture.product(id = 1L, quantity = 98L, price = 100L)
         val product3 = ProductFixture.product(id = 3L, quantity = 97L, price = 200L)
         every {
@@ -275,7 +283,7 @@ class ProductServiceTest : BehaviorSpec({
     Given("이미 되돌린 sagaId") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = ProductService(productRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = productService(productRepository, historyRepository)
         every {
             historyRepository.findAllBySagaIdAndTransactionType("saga-1", ProductTransactionType.PURCHASE)
         } returns listOf(ProductFixture.history(price = 600L))
