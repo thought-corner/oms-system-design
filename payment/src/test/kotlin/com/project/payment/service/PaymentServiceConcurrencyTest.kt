@@ -3,6 +3,7 @@ package com.project.payment.service
 import com.project.payment.DbTag
 import com.project.payment.domain.PaymentStatus
 import com.project.payment.fixture.PaymentFixture
+import com.project.payment.repository.OutboxMessageRepository
 import com.project.payment.repository.PaymentRepository
 import com.project.payment.repository.SagaGuardRepository
 import com.project.payment.service.dto.PayCancelCommand
@@ -11,6 +12,7 @@ import com.project.payment.statemachine.PaymentStateMachine
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.extensions.spring.SpringExtension
 import io.kotest.extensions.spring.SpringTestLifecycleMode
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import org.springframework.beans.factory.annotation.Autowired
@@ -23,6 +25,13 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
+private data class PayCancelRace(
+    val waited: Boolean,
+    val status: PaymentStatus?,
+    val paidOrderId: Long?,
+    val replyTypes: List<String>,
+)
+
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class PaymentServiceConcurrencyTest : BehaviorSpec() {
@@ -32,6 +41,9 @@ class PaymentServiceConcurrencyTest : BehaviorSpec() {
 
     @Autowired
     lateinit var guardRepository: SagaGuardRepository
+
+    @Autowired
+    lateinit var outboxMessageRepository: OutboxMessageRepository
 
     @Autowired
     lateinit var transactionManager: PlatformTransactionManager
@@ -52,6 +64,7 @@ class PaymentServiceConcurrencyTest : BehaviorSpec() {
                 paymentRepository,
                 SagaGuardLock(guardRepository, PaymentFixture.FIXED_CLOCK),
                 PaymentStateMachine(),
+                SagaReplyOutbox(outboxMessageRepository, PaymentFixture.JSON_MAPPER, PaymentFixture.FIXED_CLOCK),
                 PaymentFixture.FIXED_CLOCK,
             )
             val executor = Executors.newFixedThreadPool(2)
@@ -78,19 +91,22 @@ class PaymentServiceConcurrencyTest : BehaviorSpec() {
                     payer.get(10, TimeUnit.SECONDS)
                     canceller.get(10, TimeUnit.SECONDS)
                     val payment = newTransaction().execute { paymentRepository.findBySagaId(sagaId) }
-                    Triple(waited, payment?.status, payment?.paidOrderId)
+                    val replyTypes = newTransaction().execute { outboxMessageRepository.findAllBySagaId(sagaId).map { it.messageType } }
+                    PayCancelRace(waited, payment?.status, payment?.paidOrderId, replyTypes.orEmpty())
                 } finally {
                     executor.shutdownNow()
                     newTransaction().execute {
                         paymentRepository.findBySagaId(sagaId)?.let { paymentRepository.delete(it) }
                         guardRepository.deleteById(sagaId)
+                        outboxMessageRepository.deleteAll(outboxMessageRepository.findAllBySagaId(sagaId))
                     }
                 }
 
-                Then("보상은 가드에서 기다렸다가 커밋된 결제를 보고 취소한다") {
-                    result.first shouldBe true
-                    result.second shouldBe PaymentStatus.CANCELED
-                    result.third.shouldBeNull()
+                Then("보상은 가드에서 기다렸다가 커밋된 결제를 보고 취소하고 두 응답이 각자 커밋된다") {
+                    result.waited shouldBe true
+                    result.status shouldBe PaymentStatus.CANCELED
+                    result.paidOrderId.shouldBeNull()
+                    result.replyTypes shouldContainExactlyInAnyOrder listOf("PAYMENT_PAY", "PAYMENT_CANCEL")
                 }
             }
         }

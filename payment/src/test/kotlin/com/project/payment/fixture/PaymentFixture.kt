@@ -3,6 +3,7 @@ package com.project.payment.fixture
 import com.project.payment.domain.Payment
 import com.project.payment.domain.SagaGuard
 import com.project.payment.domain.SagaGuardKind
+import tools.jackson.databind.json.JsonMapper
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDateTime
@@ -18,6 +19,7 @@ object PaymentFixture {
     val FIXED_INSTANT: Instant = Instant.parse("2026-09-21T10:00:00Z")
     val FIXED_CLOCK: Clock = Clock.fixed(FIXED_INSTANT, ZoneId.of("UTC"))
     val FIXED_PAID_AT: LocalDateTime = LocalDateTime.of(2026, 9, 21, 10, 0)
+    val JSON_MAPPER: JsonMapper = JsonMapper.builder().findAndAddModules().build()
 
     fun payment(
         sagaId: String = DEFAULT_SAGA_ID,

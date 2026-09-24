@@ -1,10 +1,9 @@
-package com.project.payment.controller.dto
+package com.project.payment.messaging.dto
 
 import com.project.payment.service.dto.PayCancelCommand
 import com.project.payment.service.dto.PayCommand
-import java.time.LocalDateTime
 
-data class PayRequest(
+data class PayMessage(
     val sagaId: String,
     val orderId: Long,
     val userId: Long,
@@ -14,12 +13,7 @@ data class PayRequest(
     fun toCommand(): PayCommand = PayCommand(sagaId = sagaId, orderId = orderId, userId = userId, amount = amount)
 }
 
-data class PayResponse(
-    val paymentId: Long,
-    val paidAt: LocalDateTime,
-)
-
-data class PayCancelRequest(
+data class PayCancelMessage(
     val sagaId: String,
     val orderId: Long,
 ) {
