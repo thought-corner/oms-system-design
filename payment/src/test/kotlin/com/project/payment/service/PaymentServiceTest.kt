@@ -1,12 +1,12 @@
 package com.project.payment.service
 
+import com.project.common.exception.BusinessException
 import com.project.payment.domain.Payment
 import com.project.payment.domain.PaymentStatus
 import com.project.payment.domain.SagaGuardKind
+import com.project.payment.exception.PaymentErrorCode
 import com.project.payment.fixture.PaymentFixture
 import com.project.payment.fixture.withId
-import com.project.common.exception.BusinessException
-import com.project.payment.exception.PaymentErrorCode
 import com.project.payment.repository.PaymentRepository
 import com.project.payment.repository.SagaGuardRepository
 import com.project.payment.service.dto.PayCancelCommand
@@ -16,6 +16,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.mockk.Called
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -39,11 +40,22 @@ private fun guardRepository(kind: SagaGuardKind = SagaGuardKind.FORWARD): SagaGu
         every { it.findWithLockBySagaId(any()) } answers { PaymentFixture.guard(sagaId = firstArg(), kind = kind) }
     }
 
+private fun paymentService(
+    paymentRepository: PaymentRepository,
+    guardRepository: SagaGuardRepository = guardRepository(),
+): PaymentService =
+    PaymentService(
+        paymentRepository,
+        SagaGuardLock(guardRepository, PaymentFixture.FIXED_CLOCK),
+        PaymentStateMachine(),
+        PaymentFixture.FIXED_CLOCK,
+    )
+
 class PaymentServiceTest : BehaviorSpec({
 
     Given("같은 sagaId로 이미 결제한 이력이 있는 주문") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = paymentService(paymentRepository)
         every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns PaymentFixture.payment().withId(7L)
 
         When("같은 sagaId로 결제를 다시 요청하면") {
@@ -60,7 +72,7 @@ class PaymentServiceTest : BehaviorSpec({
     Given("결제 이력이 없는 주문") {
         val paymentRepository = mockk<PaymentRepository>()
         val guardRepository = guardRepository()
-        val service = PaymentService(paymentRepository, guardRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = paymentService(paymentRepository, guardRepository)
         every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns null
         every { paymentRepository.findByPaidOrderId(any()) } returns null
         every { paymentRepository.save(any()) } answers { firstArg<Payment>().withId(1L) }
@@ -85,7 +97,7 @@ class PaymentServiceTest : BehaviorSpec({
     Given("결제 이력이 없는 sagaId") {
         val paymentRepository = mockk<PaymentRepository>()
         val guardRepository = guardRepository(SagaGuardKind.CANCEL)
-        val service = PaymentService(paymentRepository, guardRepository, PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = paymentService(paymentRepository, guardRepository)
         every { paymentRepository.findBySagaId("saga-none") } returns null
 
         When("보상을 요청하면") {
@@ -100,7 +112,7 @@ class PaymentServiceTest : BehaviorSpec({
 
     Given("결제된 주문") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = paymentService(paymentRepository)
         val payment = PaymentFixture.payment().withId(1L)
         every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns payment
 
@@ -124,7 +136,7 @@ class PaymentServiceTest : BehaviorSpec({
 
     Given("다른 사가가 이미 결제한 주문") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = paymentService(paymentRepository)
         every { paymentRepository.findBySagaId("saga-2") } returns null
         every {
             paymentRepository.findByPaidOrderId(PaymentFixture.DEFAULT_ORDER_ID)
@@ -142,27 +154,21 @@ class PaymentServiceTest : BehaviorSpec({
 
     Given("보상이 먼저 도착해 CANCEL 가드가 남은 sagaId") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(
-            paymentRepository,
-            guardRepository(SagaGuardKind.CANCEL),
-            PaymentStateMachine(),
-            PaymentFixture.FIXED_CLOCK,
-        )
-        every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns null
+        val service = paymentService(paymentRepository, guardRepository(SagaGuardKind.CANCEL))
 
         When("늦게 도착한 결제 요청이 오면") {
             val exception = shouldThrow<BusinessException> { service.pay(payCommand()) }
 
-            Then("SAGA_ALREADY_COMPENSATED로 거부하고 외부 승인을 기다리지 않는다") {
+            Then("SAGA_ALREADY_COMPENSATED로 거부하고 결제 이력을 읽지도 기록하지도 않는다") {
                 exception.errorCode shouldBe PaymentErrorCode.SAGA_ALREADY_COMPENSATED
-                verify(exactly = 0) { paymentRepository.save(any()) }
+                verify { paymentRepository wasNot Called }
             }
         }
     }
 
     Given("같은 sagaId의 결제가 이미 취소된 주문") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = paymentService(paymentRepository)
         val canceled = PaymentFixture.payment().withId(1L).also { it.transitionTo(PaymentStatus.CANCELED) }
         every { paymentRepository.findBySagaId(PaymentFixture.DEFAULT_SAGA_ID) } returns canceled
 
@@ -178,7 +184,7 @@ class PaymentServiceTest : BehaviorSpec({
 
     Given("외부 승인을 기다리는 동안 다른 사가가 같은 주문을 먼저 결제한 상태") {
         val paymentRepository = mockk<PaymentRepository>()
-        val service = PaymentService(paymentRepository, guardRepository(), PaymentStateMachine(), PaymentFixture.FIXED_CLOCK)
+        val service = paymentService(paymentRepository)
         every { paymentRepository.findBySagaId("saga-4") } returns null
         every { paymentRepository.findByPaidOrderId(any()) } returns null
         every { paymentRepository.save(any()) } throws DataIntegrityViolationException(

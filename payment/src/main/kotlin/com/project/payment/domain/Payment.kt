@@ -42,6 +42,8 @@ class Payment(
     var paidOrderId: Long? = orderId
         protected set
 
+    fun isCanceled(): Boolean = status == PaymentStatus.CANCELED
+
     fun transitionTo(next: PaymentStatus) {
         status = next
         paidOrderId = orderId.takeIf { next == PaymentStatus.PAID }
