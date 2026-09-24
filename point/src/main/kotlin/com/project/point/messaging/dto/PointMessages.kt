@@ -1,9 +1,9 @@
-package com.project.point.controller.dto
+package com.project.point.messaging.dto
 
 import com.project.point.service.dto.UseCancelCommand
 import com.project.point.service.dto.UseCommand
 
-data class UseRequest(
+data class UseMessage(
     val sagaId: String,
     val orderId: Long,
     val userId: Long,
@@ -13,12 +13,10 @@ data class UseRequest(
     fun toCommand(): UseCommand = UseCommand(sagaId = sagaId, orderId = orderId, userId = userId, amount = amount)
 }
 
-data class UseCancelRequest(
+data class UseCancelMessage(
     val sagaId: String,
     val orderId: Long,
 ) {
 
     fun toCommand(): UseCancelCommand = UseCancelCommand(sagaId = sagaId, orderId = orderId)
 }
-
-data class UseCancelResponse(val refundedAmount: Long)

@@ -3,6 +3,7 @@ package com.project.point.service
 import com.project.point.DbTag
 import com.project.point.domain.PointTransactionType
 import com.project.point.fixture.PointFixture
+import com.project.point.repository.OutboxMessageRepository
 import com.project.point.repository.PointRepository
 import com.project.point.repository.PointTransactionHistoryRepository
 import com.project.point.repository.SagaGuardRepository
@@ -18,6 +19,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.support.TransactionTemplate
+import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Clock
 import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
@@ -38,6 +40,9 @@ class PointServiceConcurrencyTest : BehaviorSpec() {
     lateinit var guardRepository: SagaGuardRepository
 
     @Autowired
+    lateinit var outboxMessageRepository: OutboxMessageRepository
+
+    @Autowired
     lateinit var transactionManager: PlatformTransactionManager
 
     private fun newTransaction(): TransactionTemplate =
@@ -53,7 +58,13 @@ class PointServiceConcurrencyTest : BehaviorSpec() {
             val sagaId = "saga-concurrency-point"
             val userId = 9001L
             val clock = Clock.fixed(PointFixture.SEED_TIME.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault())
-            val service = PointService(pointRepository, historyRepository, SagaGuardLock(guardRepository, clock), clock)
+            val service = PointService(
+                pointRepository,
+                historyRepository,
+                SagaGuardLock(guardRepository, clock),
+                SagaReplyOutbox(outboxMessageRepository, jacksonObjectMapper(), clock),
+                clock,
+            )
             newTransaction().execute { pointRepository.save(PointFixture.point(userId = userId, amount = 10000L, id = null)) }
             val executor = Executors.newFixedThreadPool(2)
             val locked = CountDownLatch(1)

@@ -1,14 +1,19 @@
 package com.project.point.service
 
 import com.project.common.exception.BusinessException
+import com.project.common.exception.ErrorCode
 import com.project.point.domain.PointTransactionHistory
 import com.project.point.domain.PointTransactionType
 import com.project.point.exception.PointErrorCode
 import com.project.point.repository.PointRepository
 import com.project.point.repository.PointTransactionHistoryRepository
+import com.project.point.service.dto.PointMessageType
+import com.project.point.service.dto.SagaReply
 import com.project.point.service.dto.UseCancelCommand
+import com.project.point.service.dto.UseCancelResult
 import com.project.point.service.dto.UseCommand
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.LocalDateTime
@@ -18,6 +23,7 @@ class PointService(
     private val pointRepository: PointRepository,
     private val historyRepository: PointTransactionHistoryRepository,
     private val sagaGuardLock: SagaGuardLock,
+    private val sagaReplyOutbox: SagaReplyOutbox,
     private val clock: Clock,
 ) {
 
@@ -28,10 +34,42 @@ class PointService(
             throw BusinessException(PointErrorCode.SAGA_ALREADY_COMPENSATED, "sagaId=${command.sagaId}")
         }
 
-        if (historyRepository.findBySagaIdAndTransactionType(command.sagaId, PointTransactionType.USE) != null) {
-            return
+        if (historyRepository.findBySagaIdAndTransactionType(command.sagaId, PointTransactionType.USE) == null) {
+            deduct(command)
         }
 
+        sagaReplyOutbox.append(
+            PointMessageType.POINT_USE,
+            SagaReply.succeeded(PointMessageType.POINT_USE, command.sagaId, command.orderId, emptyMap<String, Any>()),
+        )
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun recordUseFailure(command: UseCommand, errorCode: ErrorCode) {
+        recordUseFailure(command.sagaId, command.orderId, errorCode)
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun recordUseFailure(sagaId: String, orderId: Long, errorCode: ErrorCode) {
+        sagaReplyOutbox.append(
+            PointMessageType.POINT_USE,
+            SagaReply.failed(PointMessageType.POINT_USE, sagaId, orderId, errorCode.code),
+        )
+    }
+
+    @Transactional
+    fun cancel(command: UseCancelCommand): Long {
+        sagaGuardLock.lockCancel(command.sagaId)
+        val refundedAmount = refund(command)
+
+        sagaReplyOutbox.append(
+            PointMessageType.POINT_CANCEL,
+            SagaReply.succeeded(PointMessageType.POINT_CANCEL, command.sagaId, command.orderId, UseCancelResult(refundedAmount)),
+        )
+        return refundedAmount
+    }
+
+    private fun deduct(command: UseCommand) {
         val point = pointRepository.findWithLockByUserId(command.userId)
             ?: throw BusinessException(PointErrorCode.POINT_NOT_FOUND, "userId=${command.userId}")
 
@@ -47,10 +85,7 @@ class PointService(
         )
     }
 
-    @Transactional
-    fun cancel(command: UseCancelCommand): Long {
-        sagaGuardLock.lockCancel(command.sagaId)
-
+    private fun refund(command: UseCancelCommand): Long {
         val useHistory = historyRepository.findBySagaIdAndTransactionType(command.sagaId, PointTransactionType.USE)
             ?: return 0L
 
