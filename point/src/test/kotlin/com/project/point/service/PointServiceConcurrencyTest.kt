@@ -53,7 +53,7 @@ class PointServiceConcurrencyTest : BehaviorSpec() {
             val sagaId = "saga-concurrency-point"
             val userId = 9001L
             val clock = Clock.fixed(PointFixture.SEED_TIME.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault())
-            val service = PointService(pointRepository, historyRepository, guardRepository, clock)
+            val service = PointService(pointRepository, historyRepository, SagaGuardLock(guardRepository, clock), clock)
             newTransaction().execute { pointRepository.save(PointFixture.point(userId = userId, amount = 10000L, id = null)) }
             val executor = Executors.newFixedThreadPool(2)
             val locked = CountDownLatch(1)

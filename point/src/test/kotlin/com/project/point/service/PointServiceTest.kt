@@ -1,9 +1,9 @@
 package com.project.point.service
 
+import com.project.common.exception.BusinessException
 import com.project.point.domain.PointTransactionHistory
 import com.project.point.domain.PointTransactionType
 import com.project.point.domain.SagaGuardKind
-import com.project.common.exception.BusinessException
 import com.project.point.exception.PointErrorCode
 import com.project.point.fixture.PointFixture
 import com.project.point.repository.PointRepository
@@ -36,12 +36,19 @@ private fun guardRepository(kind: SagaGuardKind = SagaGuardKind.FORWARD): SagaGu
         every { it.findWithLockBySagaId(any()) } answers { PointFixture.guard(sagaId = firstArg(), kind = kind) }
     }
 
+private fun pointService(
+    pointRepository: PointRepository,
+    historyRepository: PointTransactionHistoryRepository,
+    guardRepository: SagaGuardRepository = guardRepository(),
+): PointService =
+    PointService(pointRepository, historyRepository, SagaGuardLock(guardRepository, FIXED_CLOCK), FIXED_CLOCK)
+
 class PointServiceTest : BehaviorSpec({
 
     Given("포인트가 없는 사용자 99") {
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
-        val service = PointService(pointRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository)
         every { historyRepository.findBySagaIdAndTransactionType(any(), any()) } returns null
         every { pointRepository.findWithLockByUserId(99L) } returns null
 
@@ -58,7 +65,7 @@ class PointServiceTest : BehaviorSpec({
     Given("잔액 399인 사용자 1") {
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
-        val service = PointService(pointRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository)
         val point = PointFixture.point(amount = 399L)
         every { historyRepository.findBySagaIdAndTransactionType(any(), any()) } returns null
         every { pointRepository.findWithLockByUserId(1L) } returns point
@@ -78,7 +85,7 @@ class PointServiceTest : BehaviorSpec({
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
         val guardRepository = guardRepository()
-        val service = PointService(pointRepository, historyRepository, guardRepository, FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository, guardRepository)
         val point = PointFixture.point()
         every { historyRepository.findBySagaIdAndTransactionType(any(), any()) } returns null
         every { pointRepository.findWithLockByUserId(1L) } returns point
@@ -106,7 +113,7 @@ class PointServiceTest : BehaviorSpec({
     Given("같은 sagaId로 이미 사용한 이력이 있는 사용자") {
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
-        val service = PointService(pointRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository)
         every {
             historyRepository.findBySagaIdAndTransactionType("saga-1", PointTransactionType.CANCEL)
         } returns null
@@ -127,7 +134,7 @@ class PointServiceTest : BehaviorSpec({
     Given("보상이 먼저 도착해 CANCEL 가드가 남은 sagaId") {
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
-        val service = PointService(pointRepository, historyRepository, guardRepository(SagaGuardKind.CANCEL), FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository, guardRepository(SagaGuardKind.CANCEL))
 
         When("늦게 도착한 사용 요청이 오면") {
             val exception = shouldThrow<BusinessException> { service.use(useCommand(1L, 400L)) }
@@ -143,7 +150,7 @@ class PointServiceTest : BehaviorSpec({
     Given("사용한 뒤 이미 되돌린 sagaId") {
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
-        val service = PointService(pointRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository)
         every {
             historyRepository.findBySagaIdAndTransactionType("saga-1", PointTransactionType.CANCEL)
         } returns PointFixture.history(transactionType = PointTransactionType.CANCEL)
@@ -162,7 +169,7 @@ class PointServiceTest : BehaviorSpec({
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
         val guardRepository = guardRepository(SagaGuardKind.CANCEL)
-        val service = PointService(pointRepository, historyRepository, guardRepository, FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository, guardRepository)
         every { historyRepository.findBySagaIdAndTransactionType("saga-none", PointTransactionType.USE) } returns null
 
         When("보상을 요청하면") {
@@ -180,7 +187,7 @@ class PointServiceTest : BehaviorSpec({
     Given("사용 이력이 있고 아직 되돌리지 않은 sagaId") {
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
-        val service = PointService(pointRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository)
         val point = PointFixture.point(amount = 9600L)
         every {
             historyRepository.findBySagaIdAndTransactionType("saga-1", PointTransactionType.USE)
@@ -211,7 +218,7 @@ class PointServiceTest : BehaviorSpec({
     Given("이미 되돌린 sagaId") {
         val pointRepository = mockk<PointRepository>()
         val historyRepository = mockk<PointTransactionHistoryRepository>()
-        val service = PointService(pointRepository, historyRepository, guardRepository(), FIXED_CLOCK)
+        val service = pointService(pointRepository, historyRepository)
         every {
             historyRepository.findBySagaIdAndTransactionType("saga-1", PointTransactionType.USE)
         } returns PointFixture.history(amount = 400L)
