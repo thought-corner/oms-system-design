@@ -1,6 +1,8 @@
 package com.project.order.client
 
+import com.project.common.exception.BusinessException
 import com.project.order.exception.ProductErrorCode
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -87,6 +89,41 @@ class RemoteErrorTranslatorTest : BehaviorSpec({
 
             Then("기본 코드로 떨어진다") {
                 exception.errorCode shouldBe ProductErrorCode.PRODUCT_NOT_FOUND
+            }
+        }
+    }
+
+    Given("원격 호출이 4xx로 실패하는 블록") {
+        val failure = response(HttpStatus.CONFLICT, """{"code":"INSUFFICIENT_STOCK","message":"재고가 부족합니다."}""")
+
+        When("번역하며 실행하면") {
+            val exception = shouldThrow<BusinessException> { translator.translating { throw failure } }
+
+            Then("우리 쪽 에러 코드의 BusinessException으로 바꿔 재시도를 끊는다") {
+                exception.errorCode shouldBe ProductErrorCode.INSUFFICIENT_STOCK
+            }
+        }
+    }
+
+    Given("원격 호출이 5xx로 실패하는 블록") {
+        val failure = response(HttpStatus.SERVICE_UNAVAILABLE, "")
+
+        When("번역하며 실행하면") {
+            val exception = shouldThrow<RestClientResponseException> { translator.translating { throw failure } }
+
+            Then("번역하지 않고 그대로 던져 재시도 대상으로 남긴다") {
+                exception shouldBe failure
+            }
+        }
+    }
+
+    Given("원격 호출이 성공하는 블록") {
+
+        When("번역하며 실행하면") {
+            val result = translator.translating { 400L }
+
+            Then("블록의 결과를 그대로 돌려준다") {
+                result shouldBe 400L
             }
         }
     }

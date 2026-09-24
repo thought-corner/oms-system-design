@@ -7,7 +7,6 @@ import com.project.order.client.dto.PayCancelApiRequest
 import com.project.order.exception.PaymentErrorCode
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
-import org.springframework.web.client.RestClientResponseException
 import tools.jackson.databind.ObjectMapper
 
 class PaymentApiClient(
@@ -26,13 +25,10 @@ class PaymentApiClient(
     fun pay(request: PayApiRequest): PayApiResponse =
         try {
             remoteCaller.call("payment.pay", policy.maxAttempts) {
-                try {
+                translator.translating {
                     checkNotNull(
                         restClient.post().uri("/payment").body(request).retrieve().body(PayApiResponse::class.java),
                     )
-                } catch (e: RestClientResponseException) {
-                    if (e.statusCode.is4xxClientError) throw translator.translate(e)
-                    throw e
                 }
             }
         } catch (e: RestClientException) {

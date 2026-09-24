@@ -6,7 +6,6 @@ import com.project.order.client.dto.BuyCancelApiRequest
 import com.project.order.client.dto.BuyCancelApiResponse
 import com.project.order.exception.ProductErrorCode
 import org.springframework.web.client.RestClient
-import org.springframework.web.client.RestClientResponseException
 import tools.jackson.databind.ObjectMapper
 
 class ProductApiClient(
@@ -24,13 +23,10 @@ class ProductApiClient(
 
     fun buy(request: BuyApiRequest): Long =
         remoteCaller.call("product.buy", policy.maxAttempts) {
-            try {
+            translator.translating {
                 checkNotNull(
                     restClient.post().uri("/product/buy").body(request).retrieve().body(BuyApiResponse::class.java),
                 ).totalPrice
-            } catch (e: RestClientResponseException) {
-                if (e.statusCode.is4xxClientError) throw translator.translate(e)
-                throw e
             }
         }
 
