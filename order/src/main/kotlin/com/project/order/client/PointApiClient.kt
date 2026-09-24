@@ -5,7 +5,6 @@ import com.project.order.client.dto.UseCancelApiRequest
 import com.project.order.client.dto.UseCancelApiResponse
 import com.project.order.exception.PointErrorCode
 import org.springframework.web.client.RestClient
-import org.springframework.web.client.RestClientResponseException
 import tools.jackson.databind.ObjectMapper
 
 class PointApiClient(
@@ -23,11 +22,8 @@ class PointApiClient(
 
     fun use(request: UseApiRequest) {
         remoteCaller.call("point.use", policy.maxAttempts) {
-            try {
+            translator.translating {
                 restClient.post().uri("/point/use").body(request).retrieve().toBodilessEntity()
-            } catch (e: RestClientResponseException) {
-                if (e.statusCode.is4xxClientError) throw translator.translate(e)
-                throw e
             }
         }
     }

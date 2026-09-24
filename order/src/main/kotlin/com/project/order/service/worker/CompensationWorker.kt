@@ -5,8 +5,8 @@ import com.project.order.client.RemoteCallPolicy
 import com.project.order.domain.SagaStatus
 import com.project.order.service.OrderSagaStateService
 import com.project.order.service.SagaOrchestrator
-import com.project.order.service.policy.SagaRecoveryPolicy
 import com.project.order.service.dto.SagaContext
+import com.project.order.service.policy.SagaRecoveryPolicy
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -34,12 +34,15 @@ class CompensationWorker(
     private fun recover(sagaId: String) {
         try {
             val stuck = sagaState.claim(sagaId) ?: return
-            val context = sagaState.contextOf(stuck.sagaId)
 
             when {
                 stuck.status == SagaStatus.RUNNING && stuck.paymentDone -> complete(stuck)
-                stuck.status == SagaStatus.RUNNING -> resume(stuck, context)
-                else -> sagaOrchestrator.compensate(context, "recovered from ${stuck.status}", RemoteCallPolicy.COMPENSATION_WORKER_ATTEMPTS)
+                stuck.status == SagaStatus.RUNNING -> resume(stuck, sagaState.contextOf(stuck.sagaId))
+                else -> sagaOrchestrator.compensate(
+                    sagaState.contextOf(stuck.sagaId),
+                    "recovered from ${stuck.status}",
+                    RemoteCallPolicy.COMPENSATION_WORKER_ATTEMPTS,
+                )
             }
         } catch (e: RuntimeException) {
             log.error("Saga recovery failed: sagaId={}", sagaId, e)

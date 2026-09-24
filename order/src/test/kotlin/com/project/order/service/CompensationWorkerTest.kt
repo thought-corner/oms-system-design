@@ -89,8 +89,9 @@ class CompensationWorkerTest : BehaviorSpec({
         When("워커가 깨어나면") {
             f.worker.sweep()
 
-            Then("정방향을 다시 돌리지 않고 완료로만 닫는다") {
+            Then("정방향을 다시 돌리지 않고 컨텍스트도 읽지 않은 채 완료로만 닫는다") {
                 verify(exactly = 1) { f.sagaState.succeed(OrderFixture.DEFAULT_SAGA_ID, OrderFixture.DEFAULT_ORDER_ID) }
+                verify(exactly = 0) { f.sagaState.contextOf(any()) }
                 verify(exactly = 0) { f.orchestrator.run(any()) }
                 verify(exactly = 0) { f.orchestrator.compensate(any(), any(), any()) }
             }

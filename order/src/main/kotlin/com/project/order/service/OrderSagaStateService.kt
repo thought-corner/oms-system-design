@@ -1,23 +1,23 @@
 package com.project.order.service
 
-import com.project.order.domain.OrderEvent
-import com.project.order.domain.OrderSaga
-import com.project.order.domain.OrderStatus
-import com.project.order.domain.SagaEvent
-import com.project.order.domain.SagaStatus
 import com.project.common.exception.BusinessException
-import com.project.order.exception.OrderErrorCode
 import com.project.order.client.CompensationFailedAlert
 import com.project.order.client.ForwardRecoveryFailedAlert
+import com.project.order.domain.Order
+import com.project.order.domain.OrderEvent
+import com.project.order.domain.OrderSaga
+import com.project.order.domain.SagaEvent
+import com.project.order.domain.SagaStatus
+import com.project.order.exception.OrderErrorCode
 import com.project.order.repository.OrderItemRepository
 import com.project.order.repository.OrderRepository
 import com.project.order.repository.OrderSagaRepository
 import com.project.order.service.dto.SagaContext
 import com.project.order.service.policy.SagaRecoveryPolicy
-import org.springframework.data.domain.Limit
 import com.project.order.statemachine.OrderStateMachine
 import com.project.order.statemachine.SagaStateMachine
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.Limit
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -45,21 +45,13 @@ class OrderSagaStateService(
             return null
         }
 
-        val next = orderStateMachine.transition(orderId, order.status, OrderEvent.PLACE)
-        apply(orderId, order.status, next) { order.transitionTo(next, now()) }
+        advance(order, OrderEvent.PLACE)
 
         val saga = orderSagaRepository.save(
             OrderSaga(sagaId = UUID.randomUUID().toString(), orderId = orderId, createdAt = now()),
         )
 
-        return SagaContext(
-            sagaId = saga.sagaId,
-            orderId = orderId,
-            userId = order.userId,
-            items = orderItemRepository.findAllByOrderId(orderId)
-                .sortedBy { it.productId }
-                .map { SagaContext.Item(it.productId, it.quantity) },
-        )
+        return sagaContext(saga, order)
     }
 
     @Transactional(readOnly = true)
@@ -69,14 +61,7 @@ class OrderSagaStateService(
             BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=${saga.orderId}")
         }
 
-        return SagaContext(
-            sagaId = saga.sagaId,
-            orderId = saga.orderId,
-            userId = order.userId,
-            items = orderItemRepository.findAllByOrderId(saga.orderId)
-                .sortedBy { it.productId }
-                .map { SagaContext.Item(it.productId, it.quantity) },
-        )
+        return sagaContext(saga, order)
     }
 
     @Transactional(readOnly = true)
@@ -110,11 +95,7 @@ class OrderSagaStateService(
 
     @Transactional
     fun succeed(sagaId: String, orderId: Long) {
-        val order = orderRepository.findWithWaitingLockById(orderId)
-            ?: throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=$orderId")
-
-        val next = orderStateMachine.transition(orderId, order.status, OrderEvent.COMPLETE)
-        apply(orderId, order.status, next) { order.transitionTo(next, now()) }
+        advance(lockedOrder(orderId), OrderEvent.COMPLETE)
         advance(lockedSaga(sagaId), SagaEvent.COMPLETE)
     }
 
@@ -127,11 +108,7 @@ class OrderSagaStateService(
 
     @Transactional
     fun compensated(sagaId: String, orderId: Long) {
-        val order = orderRepository.findWithWaitingLockById(orderId)
-            ?: throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=$orderId")
-
-        val next = orderStateMachine.transition(orderId, order.status, OrderEvent.FAIL)
-        apply(orderId, order.status, next) { order.transitionTo(next, now()) }
+        advance(lockedOrder(orderId), OrderEvent.FAIL)
         advance(lockedSaga(sagaId), SagaEvent.COMPENSATION_DONE)
     }
 
@@ -171,6 +148,10 @@ class OrderSagaStateService(
         )
     }
 
+    private fun lockedOrder(orderId: Long): Order =
+        orderRepository.findWithWaitingLockById(orderId)
+            ?: throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=$orderId")
+
     private fun saga(sagaId: String): OrderSaga =
         orderSagaRepository.findBySagaId(sagaId)
             ?: throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "sagaId=$sagaId")
@@ -186,10 +167,23 @@ class OrderSagaStateService(
         log.info("Saga state transition applied: sagaId={}, {} -> {}", saga.sagaId, previous, next)
     }
 
-    private fun apply(orderId: Long, previous: OrderStatus, next: OrderStatus, block: () -> Unit) {
-        block()
+    private fun advance(order: Order, event: OrderEvent) {
+        val orderId = requireNotNull(order.id)
+        val previous = order.status
+        val next = orderStateMachine.transition(orderId, previous, event)
+        order.transitionTo(next, now())
         log.info("Order state transition applied: orderId={}, {} -> {}", orderId, previous, next)
     }
+
+    private fun sagaContext(saga: OrderSaga, order: Order): SagaContext =
+        SagaContext(
+            sagaId = saga.sagaId,
+            orderId = saga.orderId,
+            userId = order.userId,
+            items = orderItemRepository.findAllByOrderId(saga.orderId)
+                .sortedBy { it.productId }
+                .map { SagaContext.Item(it.productId, it.quantity) },
+        )
 
     private fun now(): LocalDateTime = LocalDateTime.now(clock)
 
