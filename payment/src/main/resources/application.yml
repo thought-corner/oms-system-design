@@ -5,6 +5,7 @@ spring:
   application:
     name: payment
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: create
     show-sql: true

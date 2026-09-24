@@ -5,6 +5,7 @@ spring:
   application:
     name: point
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: create
     show-sql: true
