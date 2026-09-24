@@ -11,8 +11,10 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.test.web.client.ExpectedCount
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
+import org.springframework.test.web.client.response.MockRestResponseCreators.withException
 import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
 import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
+import java.net.SocketTimeoutException
 
 private val PAY = PayApiRequest("saga-1", 10L, 1L, 400L)
 
@@ -61,9 +63,26 @@ class PaymentApiClientTest : BehaviorSpec({
             .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE))
 
         When("결제를 부르면") {
-            shouldThrow<Exception> { client.pay(PAY) }
+            val exception = shouldThrow<BusinessException> { client.pay(PAY) }
 
-            Then("결제 단계는 시도 횟수가 2라 두 번만 시도한다") {
+            Then("두 번 시도한 뒤 PAYMENT_FAILED로 번역한다") {
+                exception.errorCode shouldBe PaymentErrorCode.PAYMENT_FAILED
+                s.server.verify()
+            }
+        }
+    }
+
+    Given("응답 없이 연결이 끊기는 Payment 서버") {
+        val s = ApiClientTestSupport()
+        val client = PaymentApiClient(s.restClient(), RemoteCallPolicy.EXTERNAL_APPROVAL, s.caller, s.objectMapper)
+        s.server.expect(ExpectedCount.times(2), requestTo("http://remote/payment"))
+            .andRespond(withException(SocketTimeoutException("Read timed out")))
+
+        When("결제를 부르면") {
+            val exception = shouldThrow<BusinessException> { client.pay(PAY) }
+
+            Then("두 번 시도한 뒤 PAYMENT_FAILED로 번역한다") {
+                exception.errorCode shouldBe PaymentErrorCode.PAYMENT_FAILED
                 s.server.verify()
             }
         }

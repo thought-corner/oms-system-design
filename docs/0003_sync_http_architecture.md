@@ -80,10 +80,12 @@
 - **결제**는 `POST /payment`로 `{sagaId, orderId, userId, amount}`를 보내면 `200 {paymentId, paidAt}`를 돌려주고, 실패는 `409 ALREADY_PAID`나 `409 SAGA_ALREADY_COMPENSATED`다. 실제 PG가 없어 승인 거절이 일어나지 않으므로 payment는 `PAYMENT_FAILED`를 내지 않는다.
 - **결제 취소**는 `POST /payment/cancel`로 `{sagaId, orderId}`를 보내면 `200`을 돌려주고, 비즈니스 실패는 없다.
 - 실패 본문은 네 서비스가 모두 `{code, message}`로 같다.
-- **`PAYMENT_FAILED`는 order가 붙이는 이름이다.** 결제 단계가 타임아웃이나 `5xx`로 실패해 원인을 모를 때 `RemoteErrorTranslator`가 이 코드로 떨어뜨린다.
+- **`PAYMENT_FAILED`는 order가 붙이는 이름이다.** 결제 단계가 타임아웃·연결 오류·`5xx`로 재시도를 소진하면 `PaymentApiClient`가 재시도 바깥에서 이 코드로 감싸고, payment가 모르는 `4xx` 코드를 내면 `RemoteErrorTranslator`가 이 코드로 떨어뜨린다.
+  재시도 안쪽에서 감싸면 `BusinessException`이 되어 재시도가 끊기므로 감싸기는 반드시 `RemoteCaller.call` 바깥에서 한다.
 - **보상은 비즈니스 실패로 응답하지 않는다.** 되돌릴 것이 없으면 `CANCEL` 가드를 남기고 `200`에 `0`을 주고, 이미 되돌렸으면 첫 번째 결과를 그대로 준다. 보상에서 나올 수 있는 실패는 연결 오류와 `5xx`뿐이고 그것만 재시도 대상이다.
 - **보상 요청에 차감량이 없다.** 무엇을 얼마나 되돌릴지는 참여자가 `sagaId`로 자기 거래 이력에서 복원한다.
 - **order가 클라이언트에 내는 실패 코드**는 `docs/0001` NFR-4 표의 코드에 더해 `INVALID_SAGA_STATE_TRANSITION`, 그리고 참여자 코드를 번역한 `ALREADY_PAID`·`PAYMENT_FAILED`·`SAGA_ALREADY_COMPENSATED`다. 모두 `409`다.
+  재고·포인트 단계가 타임아웃·연결 오류·`5xx`로 재시도를 소진한 경우는 번역하지 않아 `500 INTERNAL_ERROR`다.
 - **주문 생성은 줄마다 주문 수량을 `1..1,000`으로 받고 벗어나면 `400 INVALID_ORDER`다.** 입구에서 상한을 두어 참여자의 합산·가격 계산이 넘칠 수 없게 한다. 참여자는 넘침을 조용히 감지 않고 실패시킨다(`Math.addExact`·`multiplyExact`).
 - **결제가 진행 중인 주문을 다시 결제하면 `409 INVALID_ORDER_STATE_TRANSITION`이다.** `ORDER_LOCKED`는 두 요청의 진입 트랜잭션이 수 ms 안에 겹쳐 NOWAIT가 실패할 때만 난다.
 - **`SAGA_ALREADY_COMPENSATED`는 그 `sagaId`에 보상 가드가 있거나 이미 되돌린 이력이 있다는 뜻이다.** order는 이 코드를 세 `*ErrorCode` 사본에 두어 폴백으로 떨어뜨리지 않는다.

@@ -4,6 +4,7 @@ import com.project.order.controller.dto.CreateOrderResponse
 import com.project.common.exception.BusinessException
 import com.project.common.exception.ErrorResponse
 import com.project.order.exception.OrderErrorCode
+import com.project.order.exception.PaymentErrorCode
 import com.project.order.exception.ProductErrorCode
 import com.project.order.service.OrderService
 import com.project.order.service.SagaOrchestrator
@@ -148,6 +149,21 @@ class OrderControllerTest : BehaviorSpec() {
                 Then("AC-3 409 INSUFFICIENT_STOCK") {
                     response.status shouldBe HttpStatus.CONFLICT.value()
                     response.asError().code shouldBe "INSUFFICIENT_STOCK"
+                }
+            }
+        }
+
+        Given("결제 단계가 재시도를 소진해 PAYMENT_FAILED를 던지는 서비스") {
+            every {
+                sagaOrchestrator.placeOrder(PlaceOrderCommand(10L))
+            } throws BusinessException(PaymentErrorCode.PAYMENT_FAILED, "sagaId=saga-1, cause=ResourceAccessException")
+
+            When("주문 10 결제 요청을 보내면") {
+                val response = postJson("/order/place", """{"orderId":10}""")
+
+                Then("409 PAYMENT_FAILED") {
+                    response.status shouldBe HttpStatus.CONFLICT.value()
+                    response.asError().code shouldBe "PAYMENT_FAILED"
                 }
             }
         }
