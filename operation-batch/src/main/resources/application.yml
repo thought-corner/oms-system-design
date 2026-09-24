@@ -1,0 +1,22 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: operation-batch
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: create
+    show-sql: false
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/operation
+    username: operation_user
+    password: 1234
+  kafka:
+    bootstrap-servers: 127.0.0.1:9092
+  task:
+    scheduling:
+      pool:
+        size: 4
