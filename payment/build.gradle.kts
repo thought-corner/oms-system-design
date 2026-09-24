@@ -1,10 +1,10 @@
 plugins {
     jacoco
-    kotlin("jvm")
-    kotlin("plugin.spring")
-    kotlin("plugin.jpa")
-    id("org.springframework.boot")
-    id("io.spring.dependency-management")
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.spring)
+    alias(libs.plugins.kotlin.jpa)
+    alias(libs.plugins.spring.boot)
+    alias(libs.plugins.spring.dependency.management)
 }
 
 group = "com.project"
@@ -22,22 +22,22 @@ repositories {
 
 dependencies {
     implementation(project(":common"))
-    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
-    implementation("org.springframework.boot:spring-boot-starter-webmvc")
-    implementation("tools.jackson.module:jackson-module-kotlin")
-    implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("org.springframework.statemachine:spring-statemachine-core:4.0.1")
+    implementation(libs.spring.boot.starter.data.jpa)
+    implementation(libs.spring.boot.starter.webmvc)
+    implementation(libs.jackson.module.kotlin)
+    implementation(libs.kotlin.reflect)
+    implementation(libs.spring.statemachine.core)
 
-    runtimeOnly("com.mysql:mysql-connector-j")
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
-    testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
-    testImplementation("io.kotest:kotest-runner-junit5:6.0.3")
-    testImplementation("io.kotest:kotest-assertions-core:6.0.3")
-    testImplementation("io.kotest:kotest-extensions-spring:6.0.3")
-    testImplementation("io.mockk:mockk:1.14.5")
+    runtimeOnly(libs.mysql.connector.j)
+    testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.spring.boot.webmvc.test)
+    testImplementation(libs.spring.boot.data.jpa.test)
+    testImplementation(libs.kotest.runner.junit5)
+    testImplementation(libs.kotest.assertions.core)
+    testImplementation(libs.kotest.extensions.spring)
+    testImplementation(libs.mockk)
     testImplementation(testFixtures(project(":common")))
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 configurations.testImplementation {
@@ -64,7 +64,7 @@ tasks.withType<Test> {
 }
 
 jacoco {
-    toolVersion = "0.8.13"
+    toolVersion = libs.versions.jacoco.get()
 }
 
 val coverageExclusions = listOf(

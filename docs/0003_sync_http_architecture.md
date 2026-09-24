@@ -92,6 +92,8 @@
 - **결제**는 `POST /payment`로 `{sagaId, orderId, userId, amount}`를 보내면 `200 {paymentId, paidAt}`를 돌려주고, 실패는 `409 ALREADY_PAID`나 `409 SAGA_ALREADY_COMPENSATED`다. 실제 PG가 없어 승인 거절이 일어나지 않으므로 payment는 `PAYMENT_FAILED`를 내지 않는다.
 - **결제 취소**는 `POST /payment/cancel`로 `{sagaId, orderId}`를 보내면 `200`을 돌려주고, 비즈니스 실패는 없다.
 - 실패 본문은 네 서비스가 모두 `{code, message}`로 같다.
+- **Spring MVC가 요청을 거절하면 `docs/0001` NFR-4 표의 `HTTP_<상태>` 대신 `CommonErrorCode` 항목으로 응답한다.** 404는 `RESOURCE_NOT_FOUND`, 405는 `METHOD_NOT_ALLOWED`, 415는 `UNSUPPORTED_MEDIA_TYPE`이고, `Allow`·`Accept` 헤더는 그대로 싣는다.
+  406은 클라이언트가 JSON을 받지 않는다는 뜻이라 본문 없이 상태만 보낸다.
 - **`PAYMENT_FAILED`는 order가 붙이는 이름이다.** 결제 단계가 타임아웃·연결 오류·`5xx`로 재시도를 소진하면 `PaymentApiClient`가 재시도 바깥에서 이 코드로 감싸고, payment가 모르는 `4xx` 코드를 내면 `RemoteErrorTranslator`가 이 코드로 떨어뜨린다.
   재시도 안쪽에서 감싸면 `BusinessException`이 되어 재시도가 끊기므로 감싸기는 반드시 `RemoteCaller.call` 바깥에서 한다.
 - **보상은 비즈니스 실패로 응답하지 않는다.** 되돌릴 것이 없으면 `CANCEL` 가드를 남기고 `200`에 `0`을 주고, 이미 되돌렸으면 첫 번째 결과를 그대로 준다. 보상에서 나올 수 있는 실패는 연결 오류와 `5xx`뿐이고 그것만 재시도 대상이다.

@@ -5,11 +5,13 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotContain
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
-import org.springframework.http.HttpStatusCode
+import org.springframework.http.MediaType
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.mock.http.MockHttpInputMessage
+import org.springframework.web.HttpMediaTypeNotAcceptableException
+import org.springframework.web.HttpMediaTypeNotSupportedException
 import org.springframework.web.HttpRequestMethodNotSupportedException
-import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 
 class GlobalExceptionHandlerTest : BehaviorSpec({
 
@@ -19,8 +21,6 @@ class GlobalExceptionHandlerTest : BehaviorSpec({
         val cases = listOf(
             TestErrorCode.NOT_FOUND to HttpStatus.NOT_FOUND,
             TestErrorCode.BAD_REQUEST to HttpStatus.BAD_REQUEST,
-            TestErrorCode.CONFLICT to HttpStatus.CONFLICT,
-            TestErrorCode.CONFLICT to HttpStatus.CONFLICT,
             TestErrorCode.CONFLICT to HttpStatus.CONFLICT,
         )
 
@@ -46,7 +46,6 @@ class GlobalExceptionHandlerTest : BehaviorSpec({
         }
     }
 
-
     Given("본문을 읽을 수 없는 예외") {
 
         When("번역하면") {
@@ -56,7 +55,7 @@ class GlobalExceptionHandlerTest : BehaviorSpec({
 
             Then("400 MALFORMED_REQUEST") {
                 response.statusCode shouldBe HttpStatus.BAD_REQUEST
-                response.body?.code shouldBe "MALFORMED_REQUEST"
+                response.body?.code shouldBe CommonErrorCode.MALFORMED_REQUEST.code
                 response.body?.message shouldNotContain "JSON parse error"
             }
         }
@@ -69,7 +68,7 @@ class GlobalExceptionHandlerTest : BehaviorSpec({
 
             Then("500 INTERNAL_ERROR이고 내부 메시지를 내보내지 않는다") {
                 response.statusCode shouldBe HttpStatus.INTERNAL_SERVER_ERROR
-                response.body?.code shouldBe "INTERNAL_ERROR"
+                response.body?.code shouldBe CommonErrorCode.INTERNAL_ERROR.code
                 response.body?.message shouldNotContain "1234"
             }
         }
@@ -79,26 +78,50 @@ class GlobalExceptionHandlerTest : BehaviorSpec({
 
             Then("클라이언트 탓이 아니므로 500") {
                 response.statusCode shouldBe HttpStatus.INTERNAL_SERVER_ERROR
-                response.body?.code shouldBe "INTERNAL_ERROR"
+                response.body?.code shouldBe CommonErrorCode.INTERNAL_ERROR.code
             }
         }
+    }
 
-        When("Spring이 상태를 아는 HttpRequestMethodNotSupportedException이면") {
-            val response = handler.handleUnexpected(HttpRequestMethodNotSupportedException("GET", listOf("POST")))
+    Given("Spring MVC가 요청을 거절한 예외") {
 
-            Then("405 HTTP_405이고 Allow 헤더를 유지한다") {
+        When("HttpRequestMethodNotSupportedException이면") {
+            val response = handler.handleMethodNotSupported(HttpRequestMethodNotSupportedException("GET", listOf("POST")))
+
+            Then("405 METHOD_NOT_ALLOWED이고 Allow 헤더를 유지한다") {
                 response.statusCode shouldBe HttpStatus.METHOD_NOT_ALLOWED
-                response.body?.code shouldBe "HTTP_405"
+                response.body?.code shouldBe CommonErrorCode.METHOD_NOT_ALLOWED.code
                 response.headers.allow.toList() shouldBe listOf(HttpMethod.POST)
             }
         }
 
-        When("비표준 상태 코드 499인 ResponseStatusException이면") {
-            val response = handler.handleUnexpected(ResponseStatusException(HttpStatusCode.valueOf(499)))
+        When("HttpMediaTypeNotSupportedException이면") {
+            val response = handler.handleMediaTypeNotSupported(
+                HttpMediaTypeNotSupportedException(MediaType.TEXT_PLAIN, listOf(MediaType.APPLICATION_JSON)),
+            )
 
-            Then("499 HTTP_499를 그대로 내보낸다") {
-                response.statusCode.value() shouldBe 499
-                response.body?.code shouldBe "HTTP_499"
+            Then("415 UNSUPPORTED_MEDIA_TYPE이고 Accept 헤더를 유지한다") {
+                response.statusCode shouldBe HttpStatus.UNSUPPORTED_MEDIA_TYPE
+                response.body?.code shouldBe CommonErrorCode.UNSUPPORTED_MEDIA_TYPE.code
+                response.headers.accept shouldBe listOf(MediaType.APPLICATION_JSON)
+            }
+        }
+
+        When("HttpMediaTypeNotAcceptableException이면") {
+            val response = handler.handleMediaTypeNotAcceptable(HttpMediaTypeNotAcceptableException(listOf(MediaType.APPLICATION_JSON)))
+
+            Then("406이고 클라이언트가 받지 않는 JSON 본문은 싣지 않는다") {
+                response.statusCode shouldBe HttpStatus.NOT_ACCEPTABLE
+                response.body shouldBe null
+            }
+        }
+
+        When("NoResourceFoundException이면") {
+            val response = handler.handleNoResource(NoResourceFoundException(HttpMethod.POST, "/nowhere", "nowhere"))
+
+            Then("404 RESOURCE_NOT_FOUND") {
+                response.statusCode shouldBe HttpStatus.NOT_FOUND
+                response.body?.code shouldBe CommonErrorCode.RESOURCE_NOT_FOUND.code
             }
         }
     }

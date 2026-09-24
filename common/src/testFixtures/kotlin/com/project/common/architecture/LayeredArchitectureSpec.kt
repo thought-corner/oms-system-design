@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
 
@@ -126,7 +127,7 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
         Then("LocalDateTime.now()를 직접 부르지 않는다 (시각은 Clock 빈에서)") {
             noClasses().should()
                 .callMethod(LocalDateTime::class.java, "now")
-                .orShould().callMethod(LocalDateTime::class.java, "now", java.time.ZoneId::class.java)
+                .orShould().callMethod(LocalDateTime::class.java, "now", ZoneId::class.java)
                 .allowEmptyShould(true)
                 .check(classes)
         }
