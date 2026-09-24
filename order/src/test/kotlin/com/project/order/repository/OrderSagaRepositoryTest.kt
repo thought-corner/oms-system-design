@@ -1,9 +1,13 @@
 package com.project.order.repository
 
 import com.project.order.DbTag
+import com.project.order.domain.OrderSaga
 import com.project.order.domain.SagaStatus
 import com.project.order.fixture.OrderFixture
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.string.shouldContain
+import org.springframework.dao.DataIntegrityViolationException
 import io.kotest.extensions.spring.SpringExtension
 import io.kotest.extensions.spring.SpringTestLifecycleMode
 import io.kotest.matchers.nulls.shouldBeNull
@@ -94,6 +98,37 @@ class OrderSagaRepositoryTest : BehaviorSpec() {
 
                 Then("SKIP LOCKED라 기다리지 않고 건너뛴다") {
                     claimed.shouldBeNull()
+                }
+            }
+        }
+
+        Given("주문 7001 에 key-a 로 연 사가") {
+            sagaRepository.saveAndFlush(OrderFixture.saga(sagaId = "saga-7001-a", orderId = 7001L, idempotencyKey = "key-a"))
+
+            When("같은 주문에 같은 키로 사가를 하나 더 만들면") {
+                val exception = shouldThrow<DataIntegrityViolationException> {
+                    sagaRepository.saveAndFlush(OrderFixture.saga(sagaId = "saga-7001-dup", orderId = 7001L, idempotencyKey = "key-a"))
+                }
+
+                Then("B-2 UNIQUE(order_id, idempotency_key) 가 막는다") {
+                    exception.mostSpecificCause.message shouldContain OrderSaga.UK_ORDER_ID_IDEMPOTENCY_KEY
+                }
+            }
+        }
+
+        Given("주문 7002 의 실패한 사가와 재결제로 연 사가") {
+            sagaRepository.save(OrderFixture.saga(sagaId = "saga-7002-a", orderId = 7002L, idempotencyKey = "key-a"))
+            sagaRepository.saveAndFlush(OrderFixture.saga(sagaId = "saga-7002-b", orderId = 7002L, idempotencyKey = "key-b"))
+
+            When("키로 찾고 최신 사가를 고르면") {
+                val sameKey = sagaRepository.existsByOrderIdAndIdempotencyKey(7002L, "key-a")
+                val otherKey = sagaRepository.existsByOrderIdAndIdempotencyKey(7002L, "key-c")
+                val latest = sagaRepository.findFirstByOrderIdOrderByIdDesc(7002L)
+
+                Then("다른 주문의 같은 키와 섞이지 않고 최신은 재결제 사가다") {
+                    sameKey shouldBe true
+                    otherKey shouldBe false
+                    latest?.sagaId shouldBe "saga-7002-b"
                 }
             }
         }

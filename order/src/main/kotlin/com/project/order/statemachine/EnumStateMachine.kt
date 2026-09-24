@@ -21,8 +21,13 @@ abstract class EnumStateMachine<K : Any, S : Enum<S>, E : Enum<E>>(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    fun transition(key: K, current: S, event: E): S {
-        val machine = build(key, current)
+    fun transition(key: K, current: S, event: E): S =
+        fire(build(key, current, TransitionTracer(key)), event)
+            ?: throw BusinessException(rejected, "$keyName=$key, status=$current, event=$event")
+
+    fun accepts(key: K, current: S, event: E): Boolean = fire(build(key, current, null), event) != null
+
+    private fun fire(machine: StateMachine<S, E>, event: E): S? {
         machine.startReactively().block()
 
         val result = machine.sendEvent(Mono.just(MessageBuilder.withPayload(event).build())).blockLast()
@@ -30,7 +35,7 @@ abstract class EnumStateMachine<K : Any, S : Enum<S>, E : Enum<E>>(
         machine.stopReactively().block()
 
         if (result == null || result.resultType != StateMachineEventResult.ResultType.ACCEPTED) {
-            throw BusinessException(rejected, "$keyName=$key, status=$current, event=$event")
+            return null
         }
 
         return next
@@ -38,13 +43,13 @@ abstract class EnumStateMachine<K : Any, S : Enum<S>, E : Enum<E>>(
 
     protected abstract fun configure(transitions: StateMachineTransitionConfigurer<S, E>)
 
-    private fun build(key: K, initial: S): StateMachine<S, E> {
+    private fun build(key: K, initial: S, tracer: TransitionTracer?): StateMachine<S, E> {
         val builder = StateMachineBuilder.builder<S, E>()
 
-        builder.configureConfiguration()
+        val configuration = builder.configureConfiguration()
             .withConfiguration()
             .autoStartup(false)
-            .listener(TransitionTracer(key))
+        tracer?.let { configuration.listener(it) }
 
         builder.configureStates()
             .withStates()

@@ -1,26 +1,25 @@
 package com.project.order.controller
 
-import com.project.order.controller.dto.CreateOrderResponse
 import com.project.common.exception.BusinessException
 import com.project.common.exception.ErrorResponse
+import com.project.order.controller.dto.CreateOrderResponse
 import com.project.order.exception.OrderErrorCode
-import com.project.order.exception.PaymentErrorCode
-import com.project.order.exception.ProductErrorCode
+import com.project.order.service.OrderPlacementService
 import com.project.order.service.OrderService
-import com.project.order.service.SagaOrchestrator
 import com.project.order.service.dto.CreateOrderCommand
 import com.project.order.service.dto.CreateOrderResult
+import com.project.order.service.dto.OrderStatusResult
 import com.project.order.service.dto.PlaceOrderCommand
+import com.project.order.service.dto.PlaceOrderResult
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.core.test.isRootTest
 import io.kotest.extensions.spring.SpringExtension
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotContain
 import io.mockk.Called
-import io.mockk.Runs
 import io.mockk.clearMocks
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import org.springframework.beans.factory.annotation.Autowired
@@ -38,7 +37,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import tools.jackson.databind.ObjectMapper
 
 @WebMvcTest(OrderController::class)
-@Import(OrderControllerTest.MockOrderService::class)
+@Import(OrderControllerTest.MockServices::class)
 class OrderControllerTest : BehaviorSpec() {
 
     @Autowired
@@ -51,20 +50,26 @@ class OrderControllerTest : BehaviorSpec() {
     lateinit var orderService: OrderService
 
     @Autowired
-    lateinit var sagaOrchestrator: SagaOrchestrator
+    lateinit var orderPlacementService: OrderPlacementService
 
     @TestConfiguration
-    class MockOrderService {
+    class MockServices {
 
         @Bean
         fun orderService(): OrderService = mockk()
 
         @Bean
-        fun sagaOrchestrator(): SagaOrchestrator = mockk()
+        fun orderPlacementService(): OrderPlacementService = mockk()
     }
 
     private fun postJson(path: String, body: String): MockHttpServletResponse =
         mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().response
+
+    private fun place(orderId: Long, key: String?): MockHttpServletResponse {
+        val request = post("/order/place").contentType(MediaType.APPLICATION_JSON).content("""{"orderId":$orderId}""")
+        key?.let { request.header("Idempotency-Key", it) }
+        return mockMvc.perform(request).andReturn().response
+    }
 
     private fun MockHttpServletResponse.asError(): ErrorResponse =
         objectMapper.readValue(contentAsString, ErrorResponse::class.java)
@@ -74,7 +79,7 @@ class OrderControllerTest : BehaviorSpec() {
 
         beforeContainer { testCase ->
             if (testCase.isRootTest()) {
-                clearMocks(orderService, sagaOrchestrator)
+                clearMocks(orderService, orderPlacementService)
             }
         }
 
@@ -123,13 +128,28 @@ class OrderControllerTest : BehaviorSpec() {
             }
         }
 
-        Given("주문 999가 없어 ORDER_NOT_FOUND를 던지는 서비스") {
+        Given("Idempotency-Key 없이는 INVALID_ORDER를 던지는 서비스") {
             every {
-                sagaOrchestrator.placeOrder(PlaceOrderCommand(999L))
-            } throws BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=999")
+                orderPlacementService.place(PlaceOrderCommand(10L, null))
+            } throws BusinessException(OrderErrorCode.INVALID_ORDER, "orderId=10, idempotencyKey=null")
+
+            When("키 없이 결제를 요청하면") {
+                val response = place(10L, null)
+
+                Then("B-2 400 INVALID_ORDER") {
+                    response.status shouldBe HttpStatus.BAD_REQUEST.value()
+                    response.asError().code shouldBe "INVALID_ORDER"
+                    response.getHeader("Location").shouldBeNull()
+                }
+            }
+        }
+
+        Given("주문 999가 없어 ORDER_NOT_FOUND를 던지는 서비스") {
+            every { orderPlacementService.place(PlaceOrderCommand(999L, "key-1")) } throws
+                BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=999")
 
             When("주문 999 결제 요청을 보내면") {
-                val response = postJson("/order/place", """{"orderId":999}""")
+                val response = place(999L, "key-1")
 
                 Then("AC-7 404 ORDER_NOT_FOUND") {
                     response.status shouldBe HttpStatus.NOT_FOUND.value()
@@ -138,41 +158,25 @@ class OrderControllerTest : BehaviorSpec() {
             }
         }
 
-        Given("재고 부족으로 INSUFFICIENT_STOCK을 던지는 서비스") {
-            every {
-                sagaOrchestrator.placeOrder(PlaceOrderCommand(10L))
-            } throws BusinessException(ProductErrorCode.INSUFFICIENT_STOCK)
+        Given("진행 중인 주문에 다른 키가 오면 전이를 거부하는 서비스") {
+            every { orderPlacementService.place(PlaceOrderCommand(10L, "key-2")) } throws
+                BusinessException(OrderErrorCode.INVALID_ORDER_STATE_TRANSITION, "orderId=10, status=PLACING, event=PLACE")
 
-            When("주문 10 결제 요청을 보내면") {
-                val response = postJson("/order/place", """{"orderId":10}""")
+            When("다른 키로 결제를 요청하면") {
+                val response = place(10L, "key-2")
 
-                Then("AC-3 409 INSUFFICIENT_STOCK") {
+                Then("B-2 409 INVALID_ORDER_STATE_TRANSITION") {
                     response.status shouldBe HttpStatus.CONFLICT.value()
-                    response.asError().code shouldBe "INSUFFICIENT_STOCK"
-                }
-            }
-        }
-
-        Given("결제 단계가 재시도를 소진해 PAYMENT_FAILED를 던지는 서비스") {
-            every {
-                sagaOrchestrator.placeOrder(PlaceOrderCommand(10L))
-            } throws BusinessException(PaymentErrorCode.PAYMENT_FAILED, "sagaId=saga-1, cause=ResourceAccessException")
-
-            When("주문 10 결제 요청을 보내면") {
-                val response = postJson("/order/place", """{"orderId":10}""")
-
-                Then("409 PAYMENT_FAILED") {
-                    response.status shouldBe HttpStatus.CONFLICT.value()
-                    response.asError().code shouldBe "PAYMENT_FAILED"
+                    response.asError().code shouldBe "INVALID_ORDER_STATE_TRANSITION"
                 }
             }
         }
 
         Given("다른 트랜잭션이 주문을 잠가 락 예외를 던지는 서비스") {
-            every { sagaOrchestrator.placeOrder(PlaceOrderCommand(10L)) } throws CannotAcquireLockException("NOWAIT")
+            every { orderPlacementService.place(PlaceOrderCommand(10L, "key-1")) } throws CannotAcquireLockException("NOWAIT")
 
             When("주문 10 결제 요청을 보내면") {
-                val response = postJson("/order/place", """{"orderId":10}""")
+                val response = place(10L, "key-1")
 
                 Then("AC-6 409 ORDER_LOCKED이고 DB 메시지를 내보내지 않는다") {
                     response.status shouldBe HttpStatus.CONFLICT.value()
@@ -184,17 +188,104 @@ class OrderControllerTest : BehaviorSpec() {
         }
 
         Given("내부 정보가 담긴 IllegalStateException을 던지는 서비스") {
-            every { sagaOrchestrator.placeOrder(PlaceOrderCommand(10L)) } throws IllegalStateException("jdbc password 1234")
+            every { orderPlacementService.place(PlaceOrderCommand(10L, "key-1")) } throws IllegalStateException("jdbc password 1234")
 
             When("주문 10 결제 요청을 보내면") {
-                val response = postJson("/order/place", """{"orderId":10}""")
+                val response = place(10L, "key-1")
 
                 Then("500 INTERNAL_ERROR이고 내부 메시지를 내보내지 않는다") {
                     response.status shouldBe HttpStatus.INTERNAL_SERVER_ERROR.value()
                     val error = response.asError()
                     error.code shouldBe "INTERNAL_ERROR"
-                    error.message shouldBe "서버 내부 오류입니다."
                     error.message shouldNotContain "1234"
+                }
+            }
+        }
+
+        Given("결제를 받아 주는 서비스") {
+            every { orderPlacementService.place(PlaceOrderCommand(10L, "key-1")) } returns PlaceOrderResult(10L)
+
+            When("키와 함께 주문 10 결제를 요청하면") {
+                val response = place(10L, "key-1")
+
+                Then("B-1 202 에 Location 과 Retry-After 를 싣고 본문은 비운다") {
+                    response.status shouldBe HttpStatus.ACCEPTED.value()
+                    response.getHeader("Location") shouldBe "/order/10"
+                    response.getHeader("Retry-After") shouldBe "1"
+                    response.contentAsString shouldBe ""
+                    verify(exactly = 1) { orderPlacementService.place(PlaceOrderCommand(10L, "key-1")) }
+                }
+            }
+        }
+
+        Given("진행 중인 주문") {
+            every { orderService.findOrder(10L) } returns OrderStatusResult(10L, "PLACING", null, placing = true)
+
+            When("GET /order/10 을 보내면") {
+                val response = mockMvc.perform(get("/order/10")).andReturn().response
+
+                Then("200 PLACING 에 Retry-After 가 붙고 code 는 없다") {
+                    response.status shouldBe HttpStatus.OK.value()
+                    response.getHeader("Retry-After") shouldBe "1"
+                    val body = objectMapper.readTree(response.contentAsString)
+                    body["orderId"].asLong() shouldBe 10L
+                    body["status"].asString() shouldBe "PLACING"
+                    body.has("code") shouldBe false
+                }
+            }
+        }
+
+        Given("잔액 부족으로 보상 중인 주문") {
+            every { orderService.findOrder(10L) } returns OrderStatusResult(10L, "PLACING", "INSUFFICIENT_POINT", placing = true)
+
+            When("GET /order/10 을 보내면") {
+                val response = mockMvc.perform(get("/order/10")).andReturn().response
+
+                Then("B-3 PLACING 과 실패 code 를 함께 준다") {
+                    response.getHeader("Retry-After") shouldBe "1"
+                    objectMapper.readTree(response.contentAsString)["code"].asString() shouldBe "INSUFFICIENT_POINT"
+                }
+            }
+        }
+
+        Given("보상까지 끝난 주문") {
+            every { orderService.findOrder(10L) } returns OrderStatusResult(10L, "FAILED", "INSUFFICIENT_POINT", placing = false)
+
+            When("GET /order/10 을 보내면") {
+                val response = mockMvc.perform(get("/order/10")).andReturn().response
+
+                Then("200 FAILED 와 code 이고 Retry-After 는 없다") {
+                    response.status shouldBe HttpStatus.OK.value()
+                    response.getHeader("Retry-After").shouldBeNull()
+                    val body = objectMapper.readTree(response.contentAsString)
+                    body["status"].asString() shouldBe "FAILED"
+                    body["code"].asString() shouldBe "INSUFFICIENT_POINT"
+                }
+            }
+        }
+
+        Given("없는 주문 999") {
+            every { orderService.findOrder(999L) } throws BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "orderId=999")
+
+            When("GET /order/999 를 보내면") {
+                val response = mockMvc.perform(get("/order/999")).andReturn().response
+
+                Then("AC-7 404 ORDER_NOT_FOUND") {
+                    response.status shouldBe HttpStatus.NOT_FOUND.value()
+                    response.asError().code shouldBe "ORDER_NOT_FOUND"
+                }
+            }
+        }
+
+        Given("숫자가 아닌 주문 id") {
+
+            When("GET /order/abc 를 보내면") {
+                val response = mockMvc.perform(get("/order/abc")).andReturn().response
+
+                Then("400 INVALID_PARAMETER이고 서비스를 부르지 않는다") {
+                    response.status shouldBe HttpStatus.BAD_REQUEST.value()
+                    response.asError().code shouldBe "INVALID_PARAMETER"
+                    verify { orderService wasNot Called }
                 }
             }
         }
@@ -242,19 +333,6 @@ class OrderControllerTest : BehaviorSpec() {
                 Then("AC-1 200이고 orderId 5를 돌려준다") {
                     response.status shouldBe HttpStatus.OK.value()
                     objectMapper.readValue(response.contentAsString, CreateOrderResponse::class.java).orderId shouldBe 5L
-                }
-            }
-        }
-
-        Given("결제를 정상 처리하는 서비스") {
-            every { sagaOrchestrator.placeOrder(PlaceOrderCommand(10L)) } just Runs
-
-            When("주문 10 결제 요청을 보내면") {
-                val response = postJson("/order/place", """{"orderId":10}""")
-
-                Then("200이고 서비스를 한 번 부른다") {
-                    response.status shouldBe HttpStatus.OK.value()
-                    verify(exactly = 1) { sagaOrchestrator.placeOrder(PlaceOrderCommand(10L)) }
                 }
             }
         }

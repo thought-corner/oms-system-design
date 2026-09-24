@@ -6,5 +6,5 @@ data class PlaceOrderRequest(
     val orderId: Long,
 ) {
 
-    fun toPlaceOrderCommand(): PlaceOrderCommand = PlaceOrderCommand(orderId)
+    fun toPlaceOrderCommand(idempotencyKey: String?): PlaceOrderCommand = PlaceOrderCommand(orderId, idempotencyKey)
 }

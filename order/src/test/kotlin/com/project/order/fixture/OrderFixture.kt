@@ -4,7 +4,11 @@ import com.project.order.domain.Order
 import com.project.order.domain.OrderItem
 import com.project.order.domain.OrderSaga
 import com.project.order.domain.OrderStatus
-import com.project.order.service.dto.SagaContext
+import com.project.order.domain.OutboxMessage
+import com.project.order.domain.OutboxStatus
+import com.project.order.domain.SagaStatus
+import com.project.order.domain.SagaStep
+import org.springframework.test.util.ReflectionTestUtils
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDateTime
@@ -16,10 +20,12 @@ object OrderFixture {
     const val DEFAULT_USER_ID = 1L
     const val DEFAULT_TOTAL_PRICE = 400L
     const val DEFAULT_SAGA_ID = "saga-1"
+    const val DEFAULT_IDEMPOTENCY_KEY = "key-1"
 
     val FIXED_INSTANT: Instant = Instant.parse("2026-09-22T03:00:00Z")
     val FIXED_CLOCK: Clock = Clock.fixed(FIXED_INSTANT, ZoneId.of("UTC"))
     val FIXED_TIME: LocalDateTime = LocalDateTime.of(2026, 9, 22, 3, 0)
+    val STALE_TIME: LocalDateTime = FIXED_TIME.minusMinutes(2)
 
     fun order(
         userId: Long = DEFAULT_USER_ID,
@@ -43,16 +49,47 @@ object OrderFixture {
     fun saga(
         sagaId: String = DEFAULT_SAGA_ID,
         orderId: Long = DEFAULT_ORDER_ID,
+        idempotencyKey: String = "key-$sagaId",
         createdAt: LocalDateTime = FIXED_TIME,
-    ): OrderSaga = OrderSaga(sagaId = sagaId, orderId = orderId, createdAt = createdAt)
+    ): OrderSaga = OrderSaga(sagaId = sagaId, orderId = orderId, idempotencyKey = idempotencyKey, createdAt = createdAt)
 
-    fun context(
+    fun sagaAt(
+        step: SagaStep,
+        paymentDone: Boolean = false,
+        attempts: Int = 0,
+        updatedAt: LocalDateTime = STALE_TIME,
+    ): OrderSaga = saga(createdAt = updatedAt).also { saga ->
+        if (step != SagaStep.STOCK) saga.stockCompleted(DEFAULT_TOTAL_PRICE, updatedAt)
+        if (step == SagaStep.PAYMENT) saga.pointCompleted(updatedAt)
+        if (paymentDone) saga.paymentCompleted(updatedAt)
+        repeat(attempts) { saga.countAttempt() }
+    }
+
+    fun compensatingSaga(
+        status: SagaStatus = SagaStatus.COMPENSATING,
+        canceled: List<SagaStep> = emptyList(),
+        failureCode: String? = "INSUFFICIENT_POINT",
+        attempts: Int = 0,
+        updatedAt: LocalDateTime = STALE_TIME,
+    ): OrderSaga = sagaAt(SagaStep.POINT, updatedAt = updatedAt).also { saga ->
+        saga.transitionTo(status, updatedAt)
+        failureCode?.let { saga.recordFailure(it) }
+        canceled.forEach { saga.canceled(it, updatedAt) }
+        repeat(attempts) { saga.countAttempt() }
+    }
+
+    fun outbox(
+        messageType: String = "STOCK_BUY",
+        status: OutboxStatus = OutboxStatus.PENDING,
+        occurredAt: LocalDateTime = FIXED_TIME,
         sagaId: String = DEFAULT_SAGA_ID,
-        orderId: Long = DEFAULT_ORDER_ID,
-        userId: Long = DEFAULT_USER_ID,
-        items: List<SagaContext.Item> = listOf(
-            SagaContext.Item(productId = 1L, quantity = 2L),
-            SagaContext.Item(productId = 2L, quantity = 1L),
-        ),
-    ): SagaContext = SagaContext(sagaId = sagaId, orderId = orderId, userId = userId, items = items)
+    ): OutboxMessage = OutboxMessage(
+        messageId = "message-$sagaId-$messageType",
+        topic = "cmd.product",
+        messageKey = DEFAULT_ORDER_ID.toString(),
+        sagaId = sagaId,
+        messageType = messageType,
+        payload = "{}",
+        occurredAt = occurredAt,
+    ).also { ReflectionTestUtils.setField(it, "status", status) }
 }
