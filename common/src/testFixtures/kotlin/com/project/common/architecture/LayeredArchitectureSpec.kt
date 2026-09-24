@@ -108,6 +108,14 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
 
     Given("$basePackage — 컴파일이 못 잡는 규칙") {
 
+        Then("exception은 어느 레이어에도 의존하지 않는다") {
+            noClasses().that().resideInAPackage("..exception..")
+                .should().dependOnClassesThat()
+                .resideInAnyPackage("..controller..", "..service..", "..repository..", "..domain..", "..statemachine..", "..client..")
+                .allowEmptyShould(true)
+                .check(classes)
+        }
+
         Then("HttpStatus는 exception 밖에서 쓰지 않는다") {
             noClasses().that().resideOutsideOfPackage("..exception..")
                 .should().dependOnClassesThat().belongToAnyOf(HttpStatus::class.java)
