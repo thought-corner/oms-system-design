@@ -1,3 +1,3 @@
 rootProject.name = "msa"
 
-include("common", "order", "product", "point", "payment")
+include("common", "order", "product", "point", "payment", "operation-batch")

@@ -1,3 +1,5 @@
+name: msa
+
 services:
   mysql:
     image: mysql:8.0
@@ -19,5 +21,55 @@ services:
       timeout: 3s
       retries: 10
 
+  kafka:
+    image: apache/kafka:4.1.0
+    container_name: msa-kafka
+    ports:
+      - "127.0.0.1:9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      TZ: Asia/Seoul
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:29092 > /dev/null 2>&1" ]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  kafka-init:
+    image: apache/kafka:4.1.0
+    container_name: msa-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        set -e
+        for spec in cmd.product:3 cmd.point:3 cmd.payment:12 saga.replies:3; do
+          topic=$${spec%%:*}
+          partitions=$${spec##*:}
+          for name in "$$topic" "$$topic-retry-0" "$$topic-retry-1" "$$topic-retry-2" "$$topic-dlt"; do
+            /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$name" --partitions "$$partitions" --replication-factor 1
+          done
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --describe
+
 volumes:
   mysql-data:
+  kafka-data:

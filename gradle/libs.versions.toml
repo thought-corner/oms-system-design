@@ -14,6 +14,10 @@ spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 spring-boot-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
 spring-boot-data-jpa-test = { module = "org.springframework.boot:spring-boot-starter-data-jpa-test" }
+spring-boot-starter-kafka = { module = "org.springframework.boot:spring-boot-starter-kafka" }
+spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
+testcontainers-kafka = { module = "org.testcontainers:testcontainers-kafka" }
+testcontainers-mysql = { module = "org.testcontainers:testcontainers-mysql" }
 spring-statemachine-core = { module = "org.springframework.statemachine:spring-statemachine-core", version.ref = "spring-statemachine" }
 jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
