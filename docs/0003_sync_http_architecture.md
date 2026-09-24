@@ -9,7 +9,7 @@
 - (AS-IS) 모놀리스를 (TO-BE) 4개의 서비스로 나누고, 주문 결제를 Order가 지휘하는 Saga로 처리한다.
 - 서비스 간 통신은 동기 HTTP이고 메시지 브로커는 쓰지 않는다.
 
-![A안 시스템 아키텍처. Client가 Order 서버를 REST로 호출하고 Order 서버 안의 SagaOrchestrator가 Product·Point·Payment 서버를 순차로 동기 호출한다. CompensationWorker가 보상 재시도와 PLACING 스윕을 맡고 서비스마다 자기 DB를 갖는다](images/07-architecture-sync.svg)
+![A안 시스템 아키텍처. Client가 Order 서버를 REST로 호출하고 Order 서버 안의 SagaOrchestrator가 Product·Point·Payment 서버를 순차로 동기 호출한다. CompensationWorker가 보상 재시도와 PLACING 스윕을 맡고 서비스마다 자기 DB를 갖는다](flow/07-동기-HTTP-아키텍처.svg)
 
 - **order**는 8080 포트에서 돌고 `order` 스키마를 `order_user` 계정으로 쓰며, 사가를 지휘하고 `POST /order`와 `POST /order/place`를 제공한다.
 - **point**는 8081 포트에서 돌고 `point` 스키마를 `point_user` 계정으로 쓰며, 포인트 사용과 환불을 제공한다.
@@ -73,7 +73,7 @@
 
 ### 상태 기계
 
-![세 상태 기계. Order는 CREATED에서 PLACE로 PLACING, PLACING에서 COMPLETE로 COMPLETED, PLACING에서 FAIL로 FAILED가 되고 FAILED에서 다시 PLACE로 PLACING이 되어 재결제를 연다. OrderSaga는 RUNNING에서 COMPLETE로 SUCCEEDED, RUNNING에서 COMPENSATE로 COMPENSATING, COMPENSATION_DONE으로 COMPENSATED, COMPENSATION_FAIL로 COMPENSATION_FAILED가 되고 거기서 다시 COMPENSATE로 COMPENSATING이 되는 워커 재시도 경로를 갖는다. Payment는 PAID에서 CANCEL로 CANCELED가 되는 전이 하나뿐이다. product와 point에는 상태 기계가 없고 *TransactionType은 이력 행의 불변 종류라 전이가 아니다](images/09-state-machines.svg)
+![세 상태 기계. Order는 CREATED에서 PLACE로 PLACING, PLACING에서 COMPLETE로 COMPLETED, PLACING에서 FAIL로 FAILED가 되고 FAILED에서 다시 PLACE로 PLACING이 되어 재결제를 연다. OrderSaga는 RUNNING에서 COMPLETE로 SUCCEEDED, RUNNING에서 COMPENSATE로 COMPENSATING, COMPENSATION_DONE으로 COMPENSATED, COMPENSATION_FAIL로 COMPENSATION_FAILED가 되고 거기서 다시 COMPENSATE로 COMPENSATING이 되는 워커 재시도 경로를 갖는다. Payment는 PAID에서 CANCEL로 CANCELED가 되는 전이 하나뿐이다. product와 point에는 상태 기계가 없고 *TransactionType은 이력 행의 불변 종류라 전이가 아니다](flow/09-상태-기계.svg)
 
 - 그림에 더해 사가에는 `COMPENSATING`에서 `COMPENSATE`를 받으면 그대로 머무는 내부 전이가 있다. 워커가 `COMPENSATING`으로 멈춘 사가의 보상을 다시 시작하는 경로이고, 서비스가 상태를 `if`로 걸러 전이를 건너뛰지 않게 한다(A-14).
 
