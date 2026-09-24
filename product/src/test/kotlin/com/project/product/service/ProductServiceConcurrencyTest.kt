@@ -12,6 +12,7 @@ import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.extensions.spring.SpringExtension
 import io.kotest.extensions.spring.SpringTestLifecycleMode
 import io.kotest.matchers.shouldBe
+import io.mockk.mockk
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
@@ -53,7 +54,7 @@ class ProductServiceConcurrencyTest : BehaviorSpec() {
             val sagaId = "saga-concurrency-product"
             val productId = 9001L
             val clock = Clock.fixed(ProductFixture.SEED_TIME.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault())
-            val service = ProductService(productRepository, historyRepository, SagaGuardLock(guardRepository, clock), clock)
+            val service = ProductService(productRepository, historyRepository, SagaGuardLock(guardRepository, clock), mockk(relaxed = true), clock)
             newTransaction().execute { productRepository.save(ProductFixture.product(id = productId, quantity = 100L, price = 200L)) }
             val executor = Executors.newFixedThreadPool(2)
             val locked = CountDownLatch(1)

@@ -1,13 +1,17 @@
 package com.project.product.service
 
 import com.project.common.exception.BusinessException
+import com.project.common.exception.ErrorCode
 import com.project.product.domain.ProductTransactionHistory
 import com.project.product.domain.ProductTransactionType
 import com.project.product.exception.ProductErrorCode
 import com.project.product.repository.ProductRepository
 import com.project.product.repository.ProductTransactionHistoryRepository
 import com.project.product.service.dto.BuyCancelCommand
+import com.project.product.service.dto.BuyCancelResult
 import com.project.product.service.dto.BuyCommand
+import com.project.product.service.dto.BuyResult
+import com.project.product.service.dto.ProductCommandType
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -19,6 +23,7 @@ class ProductService(
     private val productRepository: ProductRepository,
     private val historyRepository: ProductTransactionHistoryRepository,
     private val sagaGuardLock: SagaGuardLock,
+    private val sagaReplyWriter: SagaReplyWriter,
     private val clock: Clock,
 ) {
 
@@ -30,10 +35,33 @@ class ProductService(
         }
 
         val purchaseHistories = historyRepository.findAllBySagaIdAndTransactionType(command.sagaId, ProductTransactionType.PURCHASE)
-        if (purchaseHistories.isNotEmpty()) {
-            return purchaseHistories.sumOf { it.price }
-        }
+        val totalPrice = if (purchaseHistories.isNotEmpty()) purchaseHistories.sumOf { it.price } else purchase(command)
 
+        sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, command.sagaId, command.orderId, BuyResult(totalPrice))
+        return totalPrice
+    }
+
+    @Transactional
+    fun replyBuyFailed(command: BuyCommand, errorCode: ErrorCode) {
+        replyBuyFailed(command.sagaId, command.orderId, errorCode)
+    }
+
+    @Transactional
+    fun replyBuyFailed(sagaId: String, orderId: Long, errorCode: ErrorCode) {
+        sagaReplyWriter.failed(ProductCommandType.STOCK_BUY, sagaId, orderId, errorCode.code)
+    }
+
+    @Transactional
+    fun cancel(command: BuyCancelCommand): Long {
+        sagaGuardLock.lockCancel(command.sagaId)
+
+        val restoredPrice = restore(command.sagaId)
+
+        sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, command.sagaId, command.orderId, BuyCancelResult(restoredPrice))
+        return restoredPrice
+    }
+
+    private fun purchase(command: BuyCommand): Long {
         var totalPrice = 0L
         for ((productId, quantity) in quantitiesByProductId(command.items)) {
             val product = productRepository.findWithLockById(productId)
@@ -57,16 +85,13 @@ class ProductService(
         return totalPrice
     }
 
-    @Transactional
-    fun cancel(command: BuyCancelCommand): Long {
-        sagaGuardLock.lockCancel(command.sagaId)
-
-        val purchaseHistories = historyRepository.findAllBySagaIdAndTransactionType(command.sagaId, ProductTransactionType.PURCHASE)
+    private fun restore(sagaId: String): Long {
+        val purchaseHistories = historyRepository.findAllBySagaIdAndTransactionType(sagaId, ProductTransactionType.PURCHASE)
         if (purchaseHistories.isEmpty()) {
             return 0L
         }
 
-        val cancelHistories = historyRepository.findAllBySagaIdAndTransactionType(command.sagaId, ProductTransactionType.CANCEL)
+        val cancelHistories = historyRepository.findAllBySagaIdAndTransactionType(sagaId, ProductTransactionType.CANCEL)
         if (cancelHistories.isNotEmpty()) {
             return cancelHistories.sumOf { it.price }
         }

@@ -1,9 +1,9 @@
-package com.project.product.controller.dto
+package com.project.product.messaging.dto
 
 import com.project.product.service.dto.BuyCancelCommand
 import com.project.product.service.dto.BuyCommand
 
-data class BuyRequest(
+data class StockBuyMessage(
     val sagaId: String,
     val orderId: Long,
     val items: List<Item>,
@@ -18,14 +18,10 @@ data class BuyRequest(
     )
 }
 
-data class BuyResponse(val totalPrice: Long)
-
-data class BuyCancelRequest(
+data class StockCancelMessage(
     val sagaId: String,
     val orderId: Long,
 ) {
 
     fun toCommand(): BuyCancelCommand = BuyCancelCommand(sagaId = sagaId, orderId = orderId)
 }
-
-data class BuyCancelResponse(val restoredPrice: Long)
