@@ -34,4 +34,31 @@ class PointTransactionHistory(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long? = null
         protected set
+
+    companion object {
+        fun use(
+            sagaId: String,
+            orderId: Long,
+            userId: Long,
+            amount: Long,
+            createdAt: LocalDateTime,
+        ): PointTransactionHistory = PointTransactionHistory(
+            sagaId = sagaId,
+            orderId = orderId,
+            userId = userId,
+            amount = amount,
+            transactionType = PointTransactionType.USE,
+            createdAt = createdAt,
+        )
+
+        fun cancel(use: PointTransactionHistory, createdAt: LocalDateTime): PointTransactionHistory =
+            PointTransactionHistory(
+                sagaId = use.sagaId,
+                orderId = use.orderId,
+                userId = use.userId,
+                amount = use.amount,
+                transactionType = PointTransactionType.CANCEL,
+                createdAt = createdAt,
+            )
+    }
 }
