@@ -1,9 +1,9 @@
 plugins {
     jacoco
     `java-test-fixtures`
-    kotlin("jvm")
-    kotlin("plugin.spring")
-    id("io.spring.dependency-management")
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.spring)
+    alias(libs.plugins.spring.dependency.management)
 }
 
 group = "com.project"
@@ -21,25 +21,25 @@ repositories {
 
 dependencyManagement {
     imports {
-        mavenBom("org.springframework.boot:spring-boot-dependencies:4.1.1")
+        mavenBom("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}")
     }
 }
 
 dependencies {
-    compileOnly("org.springframework.boot:spring-boot-starter-webmvc")
+    compileOnly(libs.spring.boot.starter.webmvc)
 
-    testFixturesApi("com.tngtech.archunit:archunit:1.4.1")
-    testFixturesApi("io.kotest:kotest-runner-junit5:6.0.3")
-    testFixturesApi("io.kotest:kotest-assertions-core:6.0.3")
-    testFixturesCompileOnly("org.springframework.boot:spring-boot-starter-webmvc")
-    testFixturesCompileOnly("org.springframework.boot:spring-boot-starter-data-jpa")
+    testFixturesApi(libs.archunit)
+    testFixturesApi(libs.kotest.runner.junit5)
+    testFixturesApi(libs.kotest.assertions.core)
+    testFixturesCompileOnly(libs.spring.boot.starter.webmvc)
+    testFixturesCompileOnly(libs.spring.boot.starter.data.jpa)
 
-    testImplementation("org.springframework.boot:spring-boot-starter-webmvc")
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("io.kotest:kotest-runner-junit5:6.0.3")
-    testImplementation("io.kotest:kotest-assertions-core:6.0.3")
-    testImplementation("io.mockk:mockk:1.14.5")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation(libs.spring.boot.starter.webmvc)
+    testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.kotest.runner.junit5)
+    testImplementation(libs.kotest.assertions.core)
+    testImplementation(libs.mockk)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 configurations.testImplementation {
@@ -60,7 +60,7 @@ tasks.withType<Test> {
 }
 
 jacoco {
-    toolVersion = "0.8.13"
+    toolVersion = libs.versions.jacoco.get()
 }
 
 tasks.jacocoTestReport {

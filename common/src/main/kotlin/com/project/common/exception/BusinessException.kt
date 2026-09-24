@@ -3,8 +3,7 @@ package com.project.common.exception
 class BusinessException(
     val errorCode: ErrorCode,
     detail: String? = null,
-) : RuntimeException(if (detail == null) errorCode.message else "${errorCode.message} $detail") {
+) : RuntimeException() {
 
-    override val message: String
-        get() = super.message ?: errorCode.message
+    override val message: String = if (detail == null) errorCode.message else "${errorCode.message} $detail"
 }

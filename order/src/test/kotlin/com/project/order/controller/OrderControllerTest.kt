@@ -204,11 +204,29 @@ class OrderControllerTest : BehaviorSpec() {
             When("GET /order를 보내면") {
                 val response = mockMvc.perform(get("/order")).andReturn().response
 
-                Then("405 HTTP_405이고 Allow 헤더는 POST") {
+                Then("405 METHOD_NOT_ALLOWED이고 Allow 헤더는 POST") {
                     response.status shouldBe HttpStatus.METHOD_NOT_ALLOWED.value()
-                    response.asError().code shouldBe "HTTP_405"
+                    response.asError().code shouldBe "METHOD_NOT_ALLOWED"
                     response.getHeader("Allow") shouldBe "POST"
                     verify { orderService wasNot Called }
+                }
+            }
+        }
+
+        Given("JSON을 받지 않는 클라이언트") {
+            every {
+                orderService.createOrder(CreateOrderCommand(2L, listOf(CreateOrderCommand.OrderItem(1L, 2L))))
+            } returns CreateOrderResult(5L)
+
+            When("Accept: text/plain으로 POST /order를 보내면") {
+                val response = mockMvc.perform(
+                    post("/order").contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_PLAIN)
+                        .content("""{"userId":2,"orderItems":[{"productId":1,"quantity":2}]}"""),
+                ).andReturn().response
+
+                Then("406이고 본문이 없다") {
+                    response.status shouldBe HttpStatus.NOT_ACCEPTABLE.value()
+                    response.contentAsString shouldBe ""
                 }
             }
         }
