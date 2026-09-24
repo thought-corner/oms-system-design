@@ -53,7 +53,7 @@ class ProductServiceConcurrencyTest : BehaviorSpec() {
             val sagaId = "saga-concurrency-product"
             val productId = 9001L
             val clock = Clock.fixed(ProductFixture.SEED_TIME.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault())
-            val service = ProductService(productRepository, historyRepository, guardRepository, clock)
+            val service = ProductService(productRepository, historyRepository, SagaGuardLock(guardRepository, clock), clock)
             newTransaction().execute { productRepository.save(ProductFixture.product(id = productId, quantity = 100L, price = 200L)) }
             val executor = Executors.newFixedThreadPool(2)
             val locked = CountDownLatch(1)

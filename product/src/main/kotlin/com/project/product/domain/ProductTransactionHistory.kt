@@ -35,4 +35,34 @@ class ProductTransactionHistory(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long? = null
         protected set
+
+    companion object {
+        fun purchase(
+            sagaId: String,
+            orderId: Long,
+            productId: Long,
+            quantity: Long,
+            price: Long,
+            createdAt: LocalDateTime,
+        ): ProductTransactionHistory = ProductTransactionHistory(
+            sagaId = sagaId,
+            orderId = orderId,
+            productId = productId,
+            quantity = quantity,
+            price = price,
+            transactionType = ProductTransactionType.PURCHASE,
+            createdAt = createdAt,
+        )
+
+        fun cancel(purchase: ProductTransactionHistory, createdAt: LocalDateTime): ProductTransactionHistory =
+            ProductTransactionHistory(
+                sagaId = purchase.sagaId,
+                orderId = purchase.orderId,
+                productId = purchase.productId,
+                quantity = purchase.quantity,
+                price = purchase.price,
+                transactionType = ProductTransactionType.CANCEL,
+                createdAt = createdAt,
+            )
+    }
 }
