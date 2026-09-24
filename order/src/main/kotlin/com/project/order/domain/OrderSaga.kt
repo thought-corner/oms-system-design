@@ -57,6 +57,9 @@ class OrderSaga(
     var updatedAt: LocalDateTime = createdAt
         protected set
 
+    val isSucceeded: Boolean
+        get() = status == SagaStatus.SUCCEEDED
+
     fun stockCompleted(totalPrice: Long, at: LocalDateTime) {
         this.stockDone = true
         this.totalPrice = totalPrice

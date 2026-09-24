@@ -14,6 +14,9 @@ interface OrderSagaRepository : JpaRepository<OrderSaga, Long> {
 
     fun findBySagaId(sagaId: String): OrderSaga?
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findWithWaitingLockBySagaId(sagaId: String): OrderSaga?
+
     fun findByStatusInAndUpdatedAtLessThanOrderByUpdatedAtAsc(
         statuses: Collection<SagaStatus>,
         threshold: LocalDateTime,

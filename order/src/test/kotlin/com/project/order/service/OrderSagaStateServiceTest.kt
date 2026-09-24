@@ -42,6 +42,7 @@ private class SagaStateFixture(
 
     fun withSaga(saga: OrderSaga) = apply {
         every { sagaRepository.findBySagaId(OrderFixture.DEFAULT_SAGA_ID) } returns saga
+        every { sagaRepository.findWithWaitingLockBySagaId(OrderFixture.DEFAULT_SAGA_ID) } returns saga
         every { sagaRepository.save(any()) } answers { firstArg() }
     }
 }
@@ -138,12 +139,17 @@ class OrderSagaStateServiceTest : BehaviorSpec({
                 saga.paymentDone shouldBe true
                 saga.totalPrice shouldBe OrderFixture.DEFAULT_TOTAL_PRICE
             }
+
+            Then("사가 행을 잠금 아래에서 읽어 보상이 커밋한 상태를 옛 값으로 덮어쓰지 않는다") {
+                verify(exactly = 3) { f.sagaRepository.findWithWaitingLockBySagaId(OrderFixture.DEFAULT_SAGA_ID) }
+                verify(exactly = 0) { f.sagaRepository.findBySagaId(any()) }
+            }
         }
     }
 
     Given("존재하지 않는 사가") {
         val f = SagaStateFixture()
-        every { f.sagaRepository.findBySagaId("saga-none") } returns null
+        every { f.sagaRepository.findWithWaitingLockBySagaId("saga-none") } returns null
 
         When("단계를 기록하면") {
             val exception = shouldThrow<BusinessException> { f.sagaState.stockCompleted("saga-none", 1L) }
@@ -263,7 +269,58 @@ class OrderSagaStateServiceTest : BehaviorSpec({
 
             Then("updated_at을 지금으로 갱신해 다른 워커의 임계에서 빠지고 상태를 돌려준다") {
                 claimed?.status shouldBe SagaStatus.RUNNING
+                claimed?.paymentDone shouldBe false
                 saga.updatedAt shouldBe OrderFixture.FIXED_TIME
+            }
+        }
+    }
+
+    Given("결제까지 성공한 채 60초 넘게 멈춘 RUNNING 사가") {
+        val saga = OrderFixture.saga(createdAt = OrderFixture.FIXED_TIME.minusMinutes(5))
+        saga.paymentCompleted(OrderFixture.FIXED_TIME.minusMinutes(5))
+        val f = SagaStateFixture()
+        every {
+            f.sagaRepository.findWithLockBySagaIdAndStatusInAndUpdatedAtLessThan(OrderFixture.DEFAULT_SAGA_ID, any(), any())
+        } returns saga
+
+        When("집으면") {
+            val claimed = f.sagaState.claim(OrderFixture.DEFAULT_SAGA_ID)
+
+            Then("잠금 아래에서 읽은 결제 성공 여부를 함께 돌려준다") {
+                claimed?.paymentDone shouldBe true
+            }
+        }
+    }
+
+    Given("완료로 닫지 못한 RUNNING 사가") {
+        val saga = OrderFixture.saga()
+        val f = SagaStateFixture().withSaga(saga)
+
+        When("전진 복구 실패를 기록하면") {
+            val alert = f.sagaState.forwardRecoveryFailed(OrderFixture.DEFAULT_SAGA_ID, "lock wait timeout")
+
+            Then("상태는 RUNNING 그대로이고 시도 횟수와 오류만 남는다") {
+                saga.status shouldBe SagaStatus.RUNNING
+                saga.attempts shouldBe 1
+                saga.lastError shouldBe "lock wait timeout"
+                alert?.attempts shouldBe 1
+                alert?.lastError shouldBe "lock wait timeout"
+            }
+        }
+    }
+
+    Given("그사이 다른 주체가 이미 SUCCEEDED로 닫은 사가") {
+        val saga = OrderFixture.saga()
+        saga.transitionTo(SagaStatus.SUCCEEDED, OrderFixture.FIXED_TIME)
+        val f = SagaStateFixture().withSaga(saga)
+
+        When("전진 복구 실패를 기록하려 하면") {
+            val alert = f.sagaState.forwardRecoveryFailed(OrderFixture.DEFAULT_SAGA_ID, "invalid transition")
+
+            Then("실패가 아니므로 아무것도 기록하지 않고 null을 돌려준다") {
+                alert.shouldBeNull()
+                saga.attempts shouldBe 0
+                saga.lastError.shouldBeNull()
             }
         }
     }

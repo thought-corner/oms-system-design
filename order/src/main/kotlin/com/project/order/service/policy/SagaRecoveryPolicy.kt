@@ -9,4 +9,6 @@ object SagaRecoveryPolicy {
     val STUCK_THRESHOLD: Duration = Duration.ofSeconds(60)
 
     const val BATCH_SIZE: Int = 20
+
+    const val FORWARD_RECOVERY_ALERT_ATTEMPTS: Int = 3
 }

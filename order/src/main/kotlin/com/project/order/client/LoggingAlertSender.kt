@@ -18,4 +18,14 @@ class LoggingAlertSender : AlertSender {
             alert.lastError,
         )
     }
+
+    override fun send(alert: ForwardRecoveryFailedAlert) {
+        log.error(
+            "[ALERT] 결제까지 끝난 주문을 완료로 닫지 못해 사람이 개입해야 합니다. sagaId={}, orderId={}, attempts={}, lastError={}",
+            alert.sagaId,
+            alert.orderId,
+            alert.attempts,
+            alert.lastError,
+        )
+    }
 }

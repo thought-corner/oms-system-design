@@ -8,6 +8,7 @@ import com.project.order.domain.SagaStatus
 import com.project.common.exception.BusinessException
 import com.project.order.exception.OrderErrorCode
 import com.project.order.client.CompensationFailedAlert
+import com.project.order.client.ForwardRecoveryFailedAlert
 import com.project.order.repository.OrderItemRepository
 import com.project.order.repository.OrderRepository
 import com.project.order.repository.OrderSagaRepository
@@ -95,17 +96,17 @@ class OrderSagaStateService(
         ) ?: return null
 
         saga.claim(now())
-        return StuckSaga(saga.sagaId, saga.orderId, saga.status)
+        return StuckSaga(saga.sagaId, saga.orderId, saga.status, saga.paymentDone)
     }
 
     @Transactional
-    fun stockCompleted(sagaId: String, totalPrice: Long) = saga(sagaId).stockCompleted(totalPrice, now())
+    fun stockCompleted(sagaId: String, totalPrice: Long) = lockedSaga(sagaId).stockCompleted(totalPrice, now())
 
     @Transactional
-    fun pointCompleted(sagaId: String) = saga(sagaId).pointCompleted(now())
+    fun pointCompleted(sagaId: String) = lockedSaga(sagaId).pointCompleted(now())
 
     @Transactional
-    fun paymentCompleted(sagaId: String) = saga(sagaId).paymentCompleted(now())
+    fun paymentCompleted(sagaId: String) = lockedSaga(sagaId).paymentCompleted(now())
 
     @Transactional
     fun succeed(sagaId: String, orderId: Long) {
@@ -114,12 +115,12 @@ class OrderSagaStateService(
 
         val next = orderStateMachine.transition(orderId, order.status, OrderEvent.COMPLETE)
         apply(orderId, order.status, next) { order.transitionTo(next, now()) }
-        advance(saga(sagaId), SagaEvent.COMPLETE)
+        advance(lockedSaga(sagaId), SagaEvent.COMPLETE)
     }
 
     @Transactional
     fun beginCompensation(sagaId: String, error: String?) {
-        val saga = saga(sagaId)
+        val saga = lockedSaga(sagaId)
         saga.recordError(error)
         advance(saga, SagaEvent.COMPENSATE)
     }
@@ -131,12 +132,12 @@ class OrderSagaStateService(
 
         val next = orderStateMachine.transition(orderId, order.status, OrderEvent.FAIL)
         apply(orderId, order.status, next) { order.transitionTo(next, now()) }
-        advance(saga(sagaId), SagaEvent.COMPENSATION_DONE)
+        advance(lockedSaga(sagaId), SagaEvent.COMPENSATION_DONE)
     }
 
     @Transactional
     fun compensationFailed(sagaId: String, error: String?): CompensationFailedAlert {
-        val saga = saga(sagaId)
+        val saga = lockedSaga(sagaId)
         saga.recordError(error)
         saga.countAttempt()
         advance(saga, SagaEvent.COMPENSATION_FAIL)
@@ -152,8 +153,30 @@ class OrderSagaStateService(
         )
     }
 
+    @Transactional
+    fun forwardRecoveryFailed(sagaId: String, error: String?): ForwardRecoveryFailedAlert? {
+        val saga = lockedSaga(sagaId)
+        if (saga.isSucceeded) {
+            return null
+        }
+
+        saga.recordError(error)
+        saga.countAttempt()
+
+        return ForwardRecoveryFailedAlert(
+            sagaId = saga.sagaId,
+            orderId = saga.orderId,
+            attempts = saga.attempts,
+            lastError = saga.lastError,
+        )
+    }
+
     private fun saga(sagaId: String): OrderSaga =
         orderSagaRepository.findBySagaId(sagaId)
+            ?: throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "sagaId=$sagaId")
+
+    private fun lockedSaga(sagaId: String): OrderSaga =
+        orderSagaRepository.findWithWaitingLockBySagaId(sagaId)
             ?: throw BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "sagaId=$sagaId")
 
     private fun advance(saga: OrderSaga, event: SagaEvent) {
@@ -176,6 +199,7 @@ class OrderSagaStateService(
         val sagaId: String,
         val orderId: Long,
         val status: SagaStatus,
+        val paymentDone: Boolean,
     )
 
     companion object {

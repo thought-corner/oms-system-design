@@ -3,7 +3,16 @@ package com.project.order.client
 interface AlertSender {
 
     fun send(alert: CompensationFailedAlert)
+
+    fun send(alert: ForwardRecoveryFailedAlert)
 }
+
+data class ForwardRecoveryFailedAlert(
+    val sagaId: String,
+    val orderId: Long,
+    val attempts: Int,
+    val lastError: String?,
+)
 
 data class CompensationFailedAlert(
     val sagaId: String,

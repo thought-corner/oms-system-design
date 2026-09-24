@@ -56,4 +56,16 @@ class LoggingAlertSenderTest : BehaviorSpec({
             a.stuck shouldContainExactly listOf("stock", "point", "payment")
         }
     }
+
+    Given("결제까지 끝났지만 완료로 닫지 못한 사가") {
+        val a = ForwardRecoveryFailedAlert(sagaId = "saga-1", orderId = 10L, attempts = 3, lastError = "lock wait timeout")
+
+        When("알림을 보내면") {
+            LoggingAlertSender().send(a)
+
+            Then("보상 실패와 다른 종류로 로그만 남기고 예외를 내지 않는다") {
+                a.attempts shouldBe 3
+            }
+        }
+    }
 })
