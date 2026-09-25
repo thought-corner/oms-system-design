@@ -14,8 +14,16 @@ spring:
     url: jdbc:mysql://127.0.0.1:3306/order
     username: order_user
     password: 1234
-
-service:
-  product: http://127.0.0.1:8082
-  point: http://127.0.0.1:8081
-  payment: http://127.0.0.1:8083
+  kafka:
+    bootstrap-servers: 127.0.0.1:9092
+    consumer:
+      group-id: order-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+    listener:
+      ack-mode: record
+      concurrency: 3

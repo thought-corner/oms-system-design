@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.jpa)
     alias(libs.plugins.spring.boot)
     alias(libs.plugins.spring.dependency.management)
+    alias(libs.plugins.protobuf)
 }
 
 group = "com.project"
@@ -24,13 +25,17 @@ dependencies {
     implementation(project(":common"))
     implementation(libs.spring.boot.starter.data.jpa)
     implementation(libs.spring.boot.starter.webmvc)
+    implementation(libs.spring.boot.starter.kafka)
     implementation(libs.jackson.module.kotlin)
     implementation(libs.kotlin.reflect)
     implementation(libs.spring.statemachine.core)
+    implementation(libs.protobuf.java)
     runtimeOnly(libs.mysql.connector.j)
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.spring.boot.webmvc.test)
     testImplementation(libs.spring.boot.data.jpa.test)
+    testImplementation(libs.spring.boot.testcontainers)
+    testImplementation(libs.testcontainers.kafka)
     testImplementation(libs.kotest.runner.junit5)
     testImplementation(libs.kotest.assertions.core)
     testImplementation(libs.kotest.extensions.spring)
@@ -47,6 +52,12 @@ configurations.testImplementation {
 kotlin {
     compilerOptions {
         freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = libs.protobuf.protoc.get().toString()
     }
 }
 
@@ -71,6 +82,7 @@ val coverageExclusions = listOf(
     "com/project/order/**/dto/**",
     "com/project/order/config/**",
     "com/project/order/init/**",
+    "com/project/message/**",
 )
 
 tasks.jacocoTestReport {

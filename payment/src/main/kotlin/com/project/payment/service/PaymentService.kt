@@ -1,6 +1,7 @@
 package com.project.payment.service
 
 import com.project.common.exception.BusinessException
+import com.project.common.exception.ErrorCode
 import com.project.payment.domain.Payment
 import com.project.payment.domain.PaymentEvent
 import com.project.payment.exception.PaymentErrorCode
@@ -8,10 +9,12 @@ import com.project.payment.repository.PaymentRepository
 import com.project.payment.service.dto.PayCancelCommand
 import com.project.payment.service.dto.PayCommand
 import com.project.payment.service.dto.PayResult
+import com.project.payment.service.dto.PaymentMessageType
 import com.project.payment.statemachine.PaymentStateMachine
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Duration
@@ -22,6 +25,7 @@ class PaymentService(
     private val paymentRepository: PaymentRepository,
     private val sagaGuardLock: SagaGuardLock,
     private val paymentStateMachine: PaymentStateMachine,
+    private val sagaReplyOutbox: SagaReplyOutbox,
     private val clock: Clock,
 ) {
 
@@ -35,7 +39,7 @@ class PaymentService(
             throw BusinessException(PaymentErrorCode.SAGA_ALREADY_COMPENSATED, "sagaId=${command.sagaId}")
         }
 
-        previousPayment?.let { return PayResult.from(it) }
+        previousPayment?.let { return repliedPay(command, PayResult.from(it)) }
 
         paymentRepository.findByPaidOrderId(command.orderId)?.let {
             throw BusinessException(PaymentErrorCode.ALREADY_PAID, "orderId=${command.orderId}")
@@ -60,23 +64,41 @@ class PaymentService(
             throw e
         }
 
-        return PayResult.from(approvedPayment)
+        return repliedPay(command, PayResult.from(approvedPayment))
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun recordPayFailure(command: PayCommand, errorCode: ErrorCode) {
+        recordPayFailure(command.sagaId, command.orderId, errorCode)
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun recordPayFailure(sagaId: String, orderId: Long, errorCode: ErrorCode) {
+        sagaReplyOutbox.failed(PaymentMessageType.PAYMENT_PAY, sagaId, orderId, errorCode)
     }
 
     @Transactional
     fun cancel(command: PayCancelCommand) {
         sagaGuardLock.lockCancel(command.sagaId)
 
-        val payment = paymentRepository.findBySagaId(command.sagaId) ?: return
-        if (payment.isCanceled()) {
-            return
-        }
+        paymentRepository.findBySagaId(command.sagaId)
+            ?.takeUnless { it.isCanceled() }
+            ?.let { cancelPaid(it) }
 
+        sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_CANCEL, command.sagaId, command.orderId)
+    }
+
+    private fun cancelPaid(payment: Payment) {
         val paymentId = requireNotNull(payment.id)
         val currentStatus = payment.status
         val nextStatus = paymentStateMachine.transition(paymentId, currentStatus, PaymentEvent.CANCEL)
         payment.transitionTo(nextStatus)
         log.info("Payment state transition applied: paymentId={}, {} -> {}", paymentId, currentStatus, nextStatus)
+    }
+
+    private fun repliedPay(command: PayCommand, result: PayResult): PayResult {
+        sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_PAY, command.sagaId, command.orderId)
+        return result
     }
 
     private fun isOrderAlreadyPaid(e: DataIntegrityViolationException): Boolean =

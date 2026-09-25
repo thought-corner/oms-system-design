@@ -109,4 +109,78 @@ class OrderSagaTest : BehaviorSpec({
             }
         }
     }
+
+    Given("재발행을 두 번 겪은 재고 단계 사가") {
+        val saga = OrderFixture.sagaAt(SagaStep.STOCK, attempts = 2)
+
+        Then("재고 단계만 기다리고 결제 전이라 실패할 수 있다") {
+            saga.isAt(SagaStep.STOCK) shouldBe true
+            saga.isAt(SagaStep.POINT) shouldBe false
+            saga.canFailAt(SagaStep.STOCK) shouldBe true
+            saga.idempotencyKey shouldBe "key-${OrderFixture.DEFAULT_SAGA_ID}"
+        }
+
+        When("응답이 와서 단계가 전진하면") {
+            saga.stockCompleted(OrderFixture.DEFAULT_TOTAL_PRICE, later)
+
+            Then("진전이므로 시도 횟수가 비워진다") {
+                saga.attempts shouldBe 0
+            }
+        }
+    }
+
+    Given("결제까지 승인된 사가") {
+        val saga = OrderFixture.sagaAt(SagaStep.PAYMENT, paymentDone = true)
+
+        Then("결제 단계에 있지만 더는 실패로 되돌릴 수 없다") {
+            saga.isAt(SagaStep.PAYMENT) shouldBe true
+            saga.canFailAt(SagaStep.PAYMENT) shouldBe false
+        }
+    }
+
+    Given("보상을 시작한 사가") {
+        val saga = OrderFixture.compensatingSaga(failureCode = null)
+
+        Then("세 곳 모두 되돌릴 대상이고 결제 → 포인트 → 재고 순이다") {
+            saga.allCanceled shouldBe false
+            saga.pendingCancels shouldBe listOf(SagaStep.PAYMENT, SagaStep.POINT, SagaStep.STOCK)
+        }
+
+        When("실패 코드를 두 번 기록하면") {
+            val first = saga.recordFailure("INSUFFICIENT_POINT")
+            val second = saga.recordFailure("POINT_NOT_FOUND")
+
+            Then("첫 코드만 남는다") {
+                first shouldBe true
+                second shouldBe false
+                saga.failureCode shouldBe "INSUFFICIENT_POINT"
+            }
+        }
+
+        When("포인트 보상 응답이 두 번 오면") {
+            saga.countAttempt()
+            val first = saga.canceled(SagaStep.POINT, later)
+            val second = saga.canceled(SagaStep.POINT, later.plusSeconds(1))
+
+            Then("한 번만 기록되고 두 번째는 갱신 시각을 바꾸지 않는다") {
+                first shouldBe true
+                second shouldBe false
+                saga.attempts shouldBe 0
+                saga.updatedAt shouldBe later
+                saga.pendingCancels shouldBe listOf(SagaStep.PAYMENT, SagaStep.STOCK)
+            }
+        }
+
+        When("나머지 두 보상 응답이 오면") {
+            saga.canceled(SagaStep.PAYMENT, later)
+            saga.canceled(SagaStep.STOCK, later)
+
+            Then("셋 다 켜진다") {
+                saga.stockCanceled shouldBe true
+                saga.paymentCanceled shouldBe true
+                saga.allCanceled shouldBe true
+                saga.pendingCancels shouldBe emptyList()
+            }
+        }
+    }
 })

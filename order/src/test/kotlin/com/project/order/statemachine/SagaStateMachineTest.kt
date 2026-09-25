@@ -94,4 +94,43 @@ class SagaStateMachineTest : BehaviorSpec({
             }
         }
     }
+
+    Given("B안 응답 판정용 이벤트") {
+        val stateMachine = SagaStateMachine()
+
+        When("COMPENSATION_FAILED에 COMPENSATION_DONE을 보내면") {
+            val next = stateMachine.transition("saga-1", SagaStatus.COMPENSATION_FAILED, SagaEvent.COMPENSATION_DONE)
+
+            Then("마지막 보상 응답이 늦게 와도 COMPENSATED로 닫힌다") {
+                next shouldBe SagaStatus.COMPENSATED
+            }
+        }
+
+        When("RUNNING에 PROCEED를 보내면") {
+            val next = stateMachine.transition("saga-1", SagaStatus.RUNNING, SagaEvent.PROCEED)
+
+            Then("상태를 바꾸지 않는 내부 전이다") {
+                next shouldBe SagaStatus.RUNNING
+            }
+        }
+
+        Then("정방향 응답은 RUNNING 에서만 해당한다") {
+            SagaStatus.entries.filter { stateMachine.accepts("saga-1", it, SagaEvent.PROCEED) } shouldBe listOf(SagaStatus.RUNNING)
+        }
+
+        Then("보상 응답은 COMPENSATING · COMPENSATION_FAILED 에서만 해당한다") {
+            SagaStatus.entries.filter { stateMachine.accepts("saga-1", it, SagaEvent.RECORD_CANCEL) } shouldBe
+                listOf(SagaStatus.COMPENSATING, SagaStatus.COMPENSATION_FAILED)
+        }
+
+        When("COMPENSATED에 RECORD_CANCEL을 보내면") {
+            val exception = shouldThrow<BusinessException> {
+                stateMachine.transition("saga-1", SagaStatus.COMPENSATED, SagaEvent.RECORD_CANCEL)
+            }
+
+            Then("닫힌 사가라 거부한다") {
+                exception.errorCode shouldBe OrderErrorCode.INVALID_SAGA_STATE_TRANSITION
+            }
+        }
+    }
 })

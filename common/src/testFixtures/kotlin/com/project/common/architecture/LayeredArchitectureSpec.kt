@@ -25,10 +25,11 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
 
     Given("$basePackage — 최상위 패키지 = 레이어") {
 
-        Then("의존 방향은 controller → service → repository/statemachine/client → domain 이다") {
+        Then("의존 방향은 controller·messaging → service → repository/statemachine/client → domain 이다") {
             layeredArchitecture().consideringOnlyDependenciesInLayers()
                 .withOptionalLayers(true)
                 .layer("Controller").definedBy("..controller..")
+                .layer("Messaging").definedBy("..messaging..")
                 .layer("Service").definedBy("..service..")
                 .layer("Repository").definedBy("..repository..")
                 .layer("Domain").definedBy("..domain..")
@@ -37,7 +38,8 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
                 .layer("Config").definedBy("..config..")
                 .layer("Init").definedBy("..init..")
                 .whereLayer("Controller").mayNotBeAccessedByAnyLayer()
-                .whereLayer("Service").mayOnlyBeAccessedByLayers("Controller")
+                .whereLayer("Messaging").mayNotBeAccessedByAnyLayer()
+                .whereLayer("Service").mayOnlyBeAccessedByLayers("Controller", "Messaging")
                 .whereLayer("Repository").mayOnlyBeAccessedByLayers("Service", "Init")
                 .whereLayer("StateMachine").mayOnlyBeAccessedByLayers("Service")
                 .whereLayer("Client").mayOnlyBeAccessedByLayers("Service", "Config")
@@ -55,6 +57,14 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
             noClasses().that().resideOutsideOfPackage("..client..")
                 .and().resideOutsideOfPackage("..config..")
                 .should().dependOnClassesThat().resideInAPackage("org.springframework.web.client..")
+                .allowEmptyShould(true)
+                .check(classes)
+        }
+
+        Then("메시지 발행(KafkaTemplate·프로듀서)은 client 밖에서 하지 않는다 (config는 배선만 한다)") {
+            noClasses().that().resideOutsideOfPackage("..client..")
+                .and().resideOutsideOfPackage("..config..")
+                .should().dependOnClassesThat().resideInAPackage(KAFKA_CORE_PACKAGE)
                 .allowEmptyShould(true)
                 .check(classes)
         }
@@ -105,6 +115,20 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
                 .allowEmptyShould(true)
                 .check(classes)
         }
+
+        Then("`@KafkaListener`는 messaging 에만 붙는다") {
+            methods().that().areAnnotatedWith(KAFKA_LISTENER)
+                .should().beDeclaredInClassesThat().resideInAPackage("..messaging..")
+                .allowEmptyShould(true)
+                .check(classes)
+        }
+
+        Then("클래스 레벨 `@KafkaListener`도 messaging 에만 붙는다") {
+            classes().that().areAnnotatedWith(KAFKA_LISTENER)
+                .should().resideInAPackage("..messaging..")
+                .allowEmptyShould(true)
+                .check(classes)
+        }
     }
 
     Given("$basePackage — 컴파일이 못 잡는 규칙") {
@@ -112,7 +136,7 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
         Then("exception은 어느 레이어에도 의존하지 않는다") {
             noClasses().that().resideInAPackage("..exception..")
                 .should().dependOnClassesThat()
-                .resideInAnyPackage("..controller..", "..service..", "..repository..", "..domain..", "..statemachine..", "..client..")
+                .resideInAnyPackage("..controller..", "..messaging..", "..service..", "..repository..", "..domain..", "..statemachine..", "..client..")
                 .allowEmptyShould(true)
                 .check(classes)
         }
@@ -145,3 +169,5 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
 })
 
 private const val JAKARTA_TRANSACTIONAL = "jakarta.transaction.Transactional"
+private const val KAFKA_LISTENER = "org.springframework.kafka.annotation.KafkaListener"
+private const val KAFKA_CORE_PACKAGE = "org.springframework.kafka.core.."

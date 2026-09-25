@@ -9,6 +9,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException
 import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.servlet.resource.NoResourceFoundException
 
 @RestControllerAdvice
@@ -26,6 +27,12 @@ class GlobalExceptionHandler {
     fun handleUnreadable(e: HttpMessageNotReadableException): ResponseEntity<ErrorResponse> {
         log.warn("Malformed request body: {}", e.message)
         return ResponseEntity.status(CommonErrorCode.MALFORMED_REQUEST.status).body(ErrorResponse.of(CommonErrorCode.MALFORMED_REQUEST))
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class)
+    fun handleTypeMismatch(e: MethodArgumentTypeMismatchException): ResponseEntity<ErrorResponse> {
+        log.warn("Argument type mismatch: name={}, message={}", e.name, e.message)
+        return ResponseEntity.status(CommonErrorCode.INVALID_PARAMETER.status).body(ErrorResponse.of(CommonErrorCode.INVALID_PARAMETER))
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException::class)

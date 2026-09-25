@@ -28,8 +28,8 @@ class Order(
     var updatedAt: LocalDateTime = createdAt
         protected set
 
-    val isCompleted: Boolean
-        get() = status == OrderStatus.COMPLETED
+    val isPlacing: Boolean
+        get() = status == OrderStatus.PLACING
 
     fun transitionTo(next: OrderStatus, at: LocalDateTime) {
         status = next

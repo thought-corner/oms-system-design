@@ -3,6 +3,7 @@ package com.project.common.exception
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotContain
+import org.springframework.core.MethodParameter
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -11,6 +12,7 @@ import org.springframework.mock.http.MockHttpInputMessage
 import org.springframework.web.HttpMediaTypeNotAcceptableException
 import org.springframework.web.HttpMediaTypeNotSupportedException
 import org.springframework.web.HttpRequestMethodNotSupportedException
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.servlet.resource.NoResourceFoundException
 
 class GlobalExceptionHandlerTest : BehaviorSpec({
@@ -122,6 +124,24 @@ class GlobalExceptionHandlerTest : BehaviorSpec({
             Then("404 RESOURCE_NOT_FOUND") {
                 response.statusCode shouldBe HttpStatus.NOT_FOUND
                 response.body?.code shouldBe CommonErrorCode.RESOURCE_NOT_FOUND.code
+            }
+        }
+
+        When("경로 변수를 Long 으로 바꾸지 못한 MethodArgumentTypeMismatchException이면") {
+            val response = handler.handleTypeMismatch(
+                MethodArgumentTypeMismatchException(
+                    "abc",
+                    Long::class.java,
+                    "orderId",
+                    MethodParameter.forExecutable(String::class.java.getMethod("charAt", Int::class.javaPrimitiveType), 0),
+                    NumberFormatException("For input string: \"abc\""),
+                ),
+            )
+
+            Then("400 INVALID_PARAMETER이고 변환 예외 메시지를 내보내지 않는다") {
+                response.statusCode shouldBe HttpStatus.BAD_REQUEST
+                response.body?.code shouldBe CommonErrorCode.INVALID_PARAMETER.code
+                response.body?.message shouldNotContain "abc"
             }
         }
     }

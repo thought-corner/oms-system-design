@@ -56,9 +56,18 @@ class OrderTest : BehaviorSpec({
 
             Then("상태는 CREATED이고 id는 없다") {
                 order.status shouldBe OrderStatus.CREATED
-                order.isCompleted shouldBe false
+                order.isPlacing shouldBe false
                 order.id.shouldBeNull()
                 order.userId shouldBe 7L
+            }
+        }
+
+        When("결제를 시작해 PLACING이 되면") {
+            order.transitionTo(OrderStatus.PLACING, OrderFixture.FIXED_TIME.plusSeconds(1))
+
+            Then("진행 중으로 보이고 갱신 시각이 바뀐다") {
+                order.isPlacing shouldBe true
+                order.updatedAt shouldBe OrderFixture.FIXED_TIME.plusSeconds(1)
             }
         }
     }

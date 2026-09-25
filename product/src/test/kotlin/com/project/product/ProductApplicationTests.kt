@@ -7,7 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 
-@SpringBootTest
+@SpringBootTest(properties = ["spring.kafka.listener.auto-startup=false"])
 class ProductApplicationTests : BehaviorSpec() {
 
     @Autowired
@@ -17,7 +17,7 @@ class ProductApplicationTests : BehaviorSpec() {
         tags(DbTag)
         extensions(SpringExtension())
 
-        Given("MySQL이 떠 있는 로컬 환경") {
+        Given("MySQL이 떠 있는 로컬 환경 (Kafka 소비는 시작하지 않는다)") {
             When("애플리케이션 컨텍스트를 올리면") {
                 Then("기동에 성공한다") {
                     applicationContext.shouldNotBeNull()

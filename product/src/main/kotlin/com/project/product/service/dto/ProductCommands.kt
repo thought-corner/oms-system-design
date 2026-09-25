@@ -16,3 +16,12 @@ data class BuyCancelCommand(
     val sagaId: String,
     val orderId: Long,
 )
+
+data class DeadLetterCommand(
+    val topic: String,
+    val orderId: String?,
+    val sagaId: String?,
+    val messageType: String?,
+    val exceptionClass: String?,
+    val exceptionMessage: String?,
+)
