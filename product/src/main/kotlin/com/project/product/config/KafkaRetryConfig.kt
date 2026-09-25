@@ -29,7 +29,7 @@ class KafkaRetryConfig : RetryTopicConfigurationSupport() {
     }
 
     @Bean
-    fun commandRetryTopic(template: KafkaTemplate<String, String>): RetryTopicConfiguration =
+    fun commandRetryTopic(template: KafkaTemplate<String, ByteArray>): RetryTopicConfiguration =
         RetryTopicConfigurationBuilder.newInstance()
             .maxAttempts(CommandRetryPolicy.nonBlockingAttempts)
             .customBackoff(CommandRetryPolicy.retryTopicBackOff())

@@ -19,7 +19,6 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.support.TransactionTemplate
-import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Clock
 import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
@@ -62,7 +61,7 @@ class PointServiceConcurrencyTest : BehaviorSpec() {
                 pointRepository,
                 historyRepository,
                 SagaGuardLock(guardRepository, clock),
-                SagaReplyOutbox(outboxMessageRepository, jacksonObjectMapper(), clock),
+                SagaReplyOutbox(outboxMessageRepository, clock),
                 clock,
             )
             newTransaction().execute { pointRepository.save(PointFixture.point(userId = userId, amount = 10000L, id = null)) }

@@ -1,11 +1,11 @@
 package com.project.order.service.policy
 
-import tools.jackson.core.JacksonException
+import com.google.protobuf.InvalidProtocolBufferException
 
 object ReplyDeadLetterPolicy {
 
     val POISON_CAUSES: List<Class<out Exception>> = listOf(
-        JacksonException::class.java,
+        InvalidProtocolBufferException::class.java,
         ArithmeticException::class.java,
         IllegalArgumentException::class.java,
     )

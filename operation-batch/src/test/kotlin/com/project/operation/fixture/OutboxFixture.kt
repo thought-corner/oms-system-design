@@ -18,6 +18,6 @@ object OutboxFixture {
         messageKey = "10",
         sagaId = "saga-$id",
         messageType = "STOCK_BUY",
-        payload = """{"id":$id}""",
+        payload = byteArrayOf(0x08, id.toByte()),
     )
 }

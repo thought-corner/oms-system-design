@@ -53,18 +53,20 @@ A안의 실측 (`kpi/saga_orchestration_kpi_report.md`)과 A-17~A-24가 막은 �
 ## 3. 메시지 계약
 
 - 모든 메시지는 키가 `orderId`이고, 헤더에 `sagaId`와 `messageType`을 싣는다.
-- 요청·응답 DTO는 A-7에 따라 공유하지 않는다. 같은 JSON을 발행하는 쪽과 소비하는 쪽이 각자 자기 타입으로 읽는다.
+- 메시지 본문은 Protobuf다 (B-18). `.proto`는 A-7에 따라 모듈마다 사본을 두고, 네 사본의 필드 번호와 enum은 같아야 한다.
 - 커맨드의 `messageType`은 `STOCK_BUY`·`STOCK_CANCEL`·`POINT_USE`·`POINT_CANCEL`·`PAYMENT_PAY`·`PAYMENT_CANCEL`이다.
-- 커맨드 본문은 A안의 HTTP 요청 본문과 같다 (`docs/0003` §3). 보상 커맨드에는 여전히 차감량이 없다.
-- 응답 본문은 `{sagaId, orderId, step, direction, outcome, code, result}`다.
+- 커맨드 본문은 `StockBuyCommand`·`StockCancelCommand`·`PointUseCommand`·`PointCancelCommand`·`PaymentPayCommand`·`PaymentCancelCommand`다.
+  필드는 A안의 HTTP 요청 본문과 같다 (`docs/0003` §3). 보상 커맨드에는 여전히 차감량이 없다.
+- 응답 본문은 `SagaReply{saga_id, order_id, step, direction, outcome, optional code, optional total_price}`다.
 - 응답의 `messageType` 헤더는 그 응답을 만든 커맨드의 `messageType`과 같다 (예: `POINT_USE`에 대한 응답도 `POINT_USE`).
 - `step`은 `STOCK`·`POINT`·`PAYMENT`, `direction`은 `FORWARD`·`CANCEL`, `outcome`은 `SUCCEEDED`·`FAILED`다.
-- `code`와 `result`는 없을 수 있다. 참여자에 따라 필드를 빼거나 `null`이나 `{}`로 싣는데, order는 셋을 모두 "값 없음"으로 읽는다.
+  proto enum의 0번(`*_UNSPECIFIED`)과 모르는 값은 계약 위반이라 poison이다.
+- `code`와 `total_price`는 `optional`이라 없음을 `has*()`로 가린다.
 - `code`는 실패일 때만 있고 참여자 자기 코드 체계의 값이다 (`INSUFFICIENT_STOCK`·`SAGA_ALREADY_COMPENSATED` 등). order가 자기 코드로 번역한다 (A-6).
-- `result`는 A안의 성공 응답 본문과 같다 (`{totalPrice}`·`{paymentId, paidAt}`·`{restoredPrice}` 등).
+- `total_price`는 재고 정방향 성공에만 싣는다. order가 읽는 결과는 이것뿐이라, A안 성공 응답의 나머지 (`paymentId`·`restoredPrice` 등)는 계약에서 뺐다.
 - 보상 커맨드의 응답은 A안과 같이 `FAILED`가 없다. 되돌릴 것이 없으면 `SUCCEEDED`에 `0`이다.
-- Kafka 레코드의 값은 JSON 문자열이고 키도 문자열이다. 프로듀서와 소비자는 `StringSerializer`·`StringDeserializer`를 쓰고, 소비자가 자기 DTO로 직접 읽는다. 타입 헤더에
-  기대지 않는다.
+- Kafka 레코드의 값은 Protobuf 바이트이고 키는 문자열이다. 값은 `ByteArraySerializer`·`ByteArrayDeserializer`로 주고받고, 소비자가 `messageType` 헤더로 타입을 골라
+  `parseFrom`한다. 스키마 레지스트리는 쓰지 않는다.
 
 **`outbox` 테이블**
 
@@ -78,7 +80,7 @@ A안의 실측 (`kpi/saga_orchestration_kpi_report.md`)과 A-17~A-24가 막은 �
 | `message_key`  | `VARCHAR(50)`          | 레코드 키. `orderId`의 문자열이고 파티션과 순서(B-7)를 정한다            | 서비스                              |
 | `saga_id`      | `VARCHAR(36)`          | `sagaId` 헤더 값. 워치독이 사가의 미발행 행을 찾을 때도 쓴다             | 서비스                              |
 | `message_type` | `VARCHAR(50)`          | `messageType` 헤더 값                                                    | 서비스                              |
-| `payload`      | `TEXT`                 | 레코드 값. JSON 문자열                                                   | 서비스                              |
+| `payload`      | `BLOB`                 | 레코드 값. Protobuf 바이트. 릴레이는 내용을 모른 채 그대로 보낸다        | 서비스                              |
 | `status`       | `VARCHAR(20)`          | `PENDING` → `PUBLISHED` 또는 `FAILED`                                    | 서비스(`PENDING`으로 넣음) · 릴레이 |
 | `fail_count`   | `INT` 기본 0           | 발행 실패 횟수                                                           | 릴레이                              |
 | `occurred_at`  | `DATETIME(6)`          | 서비스가 넣은 시각                                                       | 서비스                              |
@@ -119,6 +121,7 @@ A안의 실측 (`kpi/saga_orchestration_kpi_report.md`)과 A-17~A-24가 막은 �
 | B-15 | 참여자의 HTTP 입구             | 제거                                                                                    | 메시지와 병행                                     |
 | B-16 | 브로커가 있는 테스트           | Testcontainers Kafka                                                                    | 임베디드 Kafka, 브로커 없이 단위만                |
 | B-17 | 실패의 종류                    | 비즈니스 실패·일시 장애·영구 기술 실패(poison)를 나누고, 일시 장애는 결과로 바꾸지 않음 | 시간·횟수로 poison을 추측                         |
+| B-18 | 메시지 직렬화                  | Protobuf, `.proto`는 모듈마다 사본, outbox에 바이트, 레지스트리 없음                    | JSON 문자열, 공유 계약 모듈, 스키마 레지스트리    |
 
 ---
 
@@ -253,7 +256,8 @@ Outbox의 쓰기는 비즈니스 변경과 같은 트랜잭션이어야 하므�
 두고, 파티션 수는 원본과 같게 한다 (원본과 같은 파티션 번호로 보낸다). 브로커의 자동 생성은 끄고 모든 토픽을 명시적으로 만든다.
 
 파티션 수는 `cmd.payment`가 12개, 나머지가 3개다. payment는 파티션마다 한 건에 3초씩 차례로 처리하므로 파티션 수가 곧 결제 처리량의 상한이다 (12개면 초당 약 4건). 파티션마다 60초
-안에 20건까지 쌓여도 워치독 임계를 넘지 않으므로, 동시에 약 240건이 진행 중이어도 정상 사가를 재발행하지 않는다. payment 소비자의 동시성은 파티션 수와 같은 12로 둔다.
+안에 20건까지 쌓여도 워치독 임계를 넘지 않으므로, 동시에 약 240건이 진행 중이어도 정상 사가를 재발행하지 않는다. payment 소비자의 동시성은 파티션 수와 같은 12로 둔다. 결제 한 건이 3초 동안 DB
+커넥션을 쥐므로 커넥션 풀도 동시성보다 커야 한다. payment는 `hikari.maximum-pool-size`를 16으로 둔다 (기본값 10이면 상한이 파티션이 아니라 커넥션 수가 된다).
 
 키는 `orderId`다.
 `sagaId`로 두면 같은 주문의 옛 사가와 재결제로 연 새 사가가 다른 파티션에 흩어진다.
@@ -371,8 +375,8 @@ A안에서 버리는 것은 원격을 직접 부르던 부분뿐이다.
 | 무한 블로킹                                              | 메시지를 잃지 않는다                                                                          | poison 메시지 하나가 그 파티션을 영원히 막는다                                          |
 
 **결정**: 소비자는 먼저 1초·2초·4초 간격으로 3회 블로킹 재시도하고, 그래도 실패하면 `<토픽>-retry-0`(1분 뒤)·`-retry-1`(5분 뒤)·`-retry-2`(30분 뒤)를 차례로 거친 뒤
-`<토픽>-dlt`로 보낸다. 재시도 토픽은 원본을 소비하던 모듈이 그대로 다시 소비한다 (Spring Kafka 재시도 토픽). 건너뛰고 버리는 기본 동작은 쓰지 않는다. JSON 해석 실패
-(`StringDeserializer` 뒤 Jackson 3의 `tools.jackson.core.JacksonException`)와 불변식 위반 (`ArithmeticException`·
+`<토픽>-dlt`로 보낸다. 재시도 토픽은 원본을 소비하던 모듈이 그대로 다시 소비한다 (Spring Kafka 재시도 토픽). 건너뛰고 버리는 기본 동작은 쓰지 않는다. 메시지 해석 실패
+(`ByteArrayDeserializer` 뒤 `com.google.protobuf.InvalidProtocolBufferException`, B-18)와 불변식 위반 (`ArithmeticException`·
 `IllegalArgumentException`)은 다시 해도 결과가 같으므로 재시도 없이 바로 DLT로 보낸다. 이 목록에 없는 예외는 재시도할 수 있는 쪽으로 본다. 오프셋은 처리 트랜잭션이 커밋된 뒤 레코드
 단위로 커밋한다. payment 소비자는 한 건에 3초가 걸리므로 `max.poll.records`를 작게 두어 `max.poll.interval.ms` 안에 한 번의 폴링분을 끝낸다. 재시도 횟수와 간격은
 A-16처럼 설정이 아니라 코드의 정책으로 둔다.
@@ -462,6 +466,44 @@ A안에서 실패 코드는 동기 응답으로만 나갔고 `order_saga`에는 
 - 워치독은 어떤 경우에도 보상하지 않는다 (B-11).
 - 릴레이는 브로커 장애를 행의 실패로 세지 않는다 (§3).
 
+## 20-2. B-18 — 메시지 직렬화
+
+JSON 문자열로 주고받던 커맨드와 응답을 Protobuf로 바꾼다.
+정할 것은 셋이다: 형식, `.proto`를 어디에 둘지, outbox에 무엇을 저장할지.
+
+| 선택지                  | 얻는 것                                                         | 잃는 것                                                                 |
+|-------------------------|-----------------------------------------------------------------|-------------------------------------------------------------------------|
+| **Protobuf**            | 스키마가 파일로 남고, 필드 번호로 하위 호환을 지킨다. 본문이 작다 | 사람이 레코드를 바로 읽을 수 없다. 코드 생성 단계가 빌드에 더해진다     |
+| JSON 문자열 (지금)      | 사람이 바로 읽는다. 빌드 단계가 없다                            | 계약이 코드의 data class에만 있어, 필드 이름이 어긋나도 런타임에야 안다 |
+
+| `.proto`의 위치          | 얻는 것                                          | 잃는 것                                                          |
+|--------------------------|--------------------------------------------------|------------------------------------------------------------------|
+| **모듈마다 사본**        | A-7을 지킨다. 한쪽 변경이 다른 쪽을 강제 컴파일하지 않는다 | 사본의 필드 번호가 어긋나도 컴파일이 잡지 못한다             |
+| 공유 계약 모듈 하나      | 스키마가 한 벌이라 어긋남이 없다                 | A-7을 개정해야 하고, 한쪽 변경이 네 서비스를 함께 빌드하게 한다  |
+
+| outbox의 `payload`             | 얻는 것                                                   | 잃는 것                                                        |
+|--------------------------------|-----------------------------------------------------------|----------------------------------------------------------------|
+| **`BLOB`에 Protobuf 바이트**   | 릴레이가 내용을 모른 채 그대로 보낸다 (B-5의 전제 유지)   | DB에서 행 내용을 바로 읽을 수 없다. 다섯 곳의 DDL·엔티티가 바뀐다 |
+| `TEXT`에 JSON, 릴레이가 변환   | outbox가 사람이 읽을 수 있게 남는다                       | 릴레이가 모든 메시지 타입을 알아야 해 B-5의 전제가 깨진다      |
+
+스키마 레지스트리를 두면 호환성 검사를 얻지만, 로컬 실행과 테스트에 컨테이너가 하나 더 필요하다.
+타입은 이미 `messageType` 헤더로 가려지므로 레지스트리 없이도 소비자가 무엇으로 읽을지 안다.
+
+**결정**: 메시지는 Protobuf로 주고받는다.
+
+- `.proto`는 모듈마다 `src/main/proto/saga_messages.proto` 사본으로 둔다. 네 사본은 `java_package`(`com.project.message.<서비스>`)만 다르다.
+- 필드를 바꿀 때는 네 사본을 함께 고치고, 필드 번호를 다시 쓰지 않는다.
+- outbox의 `payload`는 `BLOB`에 직렬화한 바이트를 넣는다. 릴레이는 `ByteArraySerializer`로 그대로 보낸다.
+- 스키마 레지스트리는 쓰지 않는다. 소비자는 `messageType` 헤더로 타입을 골라 `parseFrom`한다.
+- 해석할 수 없는 바이트 (`InvalidProtocolBufferException`)와 enum의 0번·모르는 값은 poison이다 (B-12·B-17).
+- proto3는 빠진 필드를 `""`·`0`으로 채워 해석에 성공한다. 그래서 참여자는 커맨드를 서비스로 넘기기 전에 `sagaId`가 비어 있지 않고 `orderId`가 양수인지,
+  정방향이면 `userId`·`amount`(포인트·결제)와 `items`·`productId`·`quantity`(재고)가 양수인지 확인하고, 어기면 `IllegalArgumentException`으로 poison 처리한다.
+  order도 응답의 `saga_id`·`order_id`가 비어 있으면 같은 방식으로 poison 처리한다. 그러지 않으면 계약 위반이 "해당 없는 응답"으로 조용히 ack된다.
+  JSON 때 필드가 빠지면 해석이 실패해 DLT로 가던 것과 같은 결과다.
+- 생성 코드는 서비스 기본 패키지 밖(`com.project.message.<서비스>`)에 두어 레이어 규칙의 대상이 아니고, 커버리지 게이트에서도 뺀다.
+
+---
+
 ## 21. A안 결정의 처분
 
 | A안 결정                                             | 처분                                                                                                                |
@@ -530,8 +572,11 @@ A안의 8가지 (S0~S7)를 같은 방식으로 다시 재고, 다음 넷을 더�
 - 보상 재발행이 3회를 넘긴 사가는 스윕마다 `COMPENSATING`을 거쳐 다시 `COMPENSATION_FAILED`로 돌아간다. 알림은 3회째 한 번뿐이고, 보상 응답이 오면 시도 횟수가 초기화된다.
 - outbox 적체 알림 (`OutboxStalledAlert`, operation-batch의 `OutboxBacklogAlert`)은 조건이 이어지는 동안 반복된다. 행이 `FAILED`로 바뀌는 순간의 알림
   (`OutboxPublishFailedAlert`)은 행마다 한 번이다.
-- 릴레이는 행마다 결과를 `ACKED`·`RETRIABLE_FAILURE`(재시도 가능한 Kafka 오류, 마감 초과)·`PERMANENT_FAILURE`(그 밖의 오류)·`NOT_SENT`(보내기 전에 마감이 지났거나 같은 토픽의 앞 행이 곧바로 실패해 건너뜀)로 나눈다. 배치에 확인이 하나도 없고 영구 실패도 없으면 브로커 장애로 보고 아무것도 세지 않는다. 그 밖에는 `PERMANENT_FAILURE`와, 다른 행이 확인을 받은 배치의 `RETRIABLE_FAILURE`만 센다. `NOT_SENT`는 세지 않는다(§3).
-- 그 결과, 스키마에서 혼자인 없는 토픽 행은 영영 세지지 않고 `PENDING`으로 남는다. 5분 적체 알림과 워치독의 정지 알림이 이것을 드러낸다. 브로커가 돌아온 첫 배치에서는 확인과 메타데이터 타임아웃이 섞여 한 행이 한 번 셀 수 있지만, 5회에 이르지 않는다.
+- 릴레이는 행마다 결과를 `ACKED`·`RETRIABLE_FAILURE`(재시도 가능한 Kafka 오류, 마감 초과)·`PERMANENT_FAILURE`(그 밖의 오류)·`NOT_SENT`(보내기 전에 마감이
+  지났거나 같은 토픽의 앞 행이 곧바로 실패해 건너뜀)로 나눈다. 배치에 확인이 하나도 없고 영구 실패도 없으면 브로커 장애로 보고 아무것도 세지 않는다. 그 밖에는 `PERMANENT_FAILURE`와, 다른
+  행이 확인을 받은 배치의 `RETRIABLE_FAILURE`만 센다. `NOT_SENT`는 세지 않는다 (§3).
+- 그 결과, 스키마에서 혼자인 없는 토픽 행은 영영 세지지 않고 `PENDING`으로 남는다. 5분 적체 알림과 워치독의 정지 알림이 이것을 드러낸다. 브로커가 돌아온 첫 배치에서는 확인과 메타데이터 타임아웃이
+  섞여 한 행이 한 번 셀 수 있지만, 5회에 이르지 않는다.
 - order의 `saga.replies` DLT 알림도 원인으로 `POISON`·`RETRY_EXHAUSTED`를 가른다. 사가는 건드리지 않는다.
 - `Idempotency-Key`는 100자까지 받고, 넘거나 비어 있으면 `400 INVALID_ORDER`다.
 - `GET /order/{orderId}`의 경로 값이 숫자가 아니면 `400 INVALID_PARAMETER`다 (`CommonErrorCode`에 새로 더함).

@@ -17,7 +17,7 @@ import java.util.concurrent.TimeoutException
 
 @Component
 class KafkaMessagePublisher(
-    private val kafkaTemplate: KafkaTemplate<String, String>,
+    private val kafkaTemplate: KafkaTemplate<String, ByteArray>,
 ) {
 
     fun publishAll(messages: List<OutgoingMessage>, deadline: Duration): List<PublishOutcome> {
@@ -30,8 +30,11 @@ class KafkaMessagePublisher(
                 return@map Skipped("deadline exceeded before send")
             }
             send(message).also { sent ->
-                if (sent is Sent && sent.future.isCompletedExceptionally) {
-                    unreachableTopics[message.topic] = rootCause(failureOf(sent.future))
+                when {
+                    sent is Rejected && isRetriable(sent.cause) ->
+                        unreachableTopics[message.topic] = rootCause(sent.cause)
+                    sent is Sent && sent.future.isCompletedExceptionally ->
+                        unreachableTopics[message.topic] = rootCause(failureOf(sent.future))
                 }
             }
         }
@@ -62,10 +65,12 @@ class KafkaMessagePublisher(
     }
 
     private fun failed(e: Throwable): PublishOutcome {
-        val retriable = generateSequence(e) { it.cause }.any { it is RetriableException }
-        val result = if (retriable) PublishResult.RETRIABLE_FAILURE else PublishResult.PERMANENT_FAILURE
+        val result = if (isRetriable(e)) PublishResult.RETRIABLE_FAILURE else PublishResult.PERMANENT_FAILURE
         return PublishOutcome(result, rootCause(e))
     }
+
+    private fun isRetriable(e: Throwable): Boolean =
+        generateSequence(e) { it.cause }.any { it is RetriableException }
 
     private fun failureOf(future: CompletableFuture<*>): Throwable =
         future.handle { _, e -> e }.join()
@@ -75,14 +80,14 @@ class KafkaMessagePublisher(
         return "${root.javaClass.simpleName}: ${root.message}"
     }
 
-    private fun OutgoingMessage.toRecord(): ProducerRecord<String, String> =
-        ProducerRecord<String, String>(topic, null, key, payload).also { record ->
+    private fun OutgoingMessage.toRecord(): ProducerRecord<String, ByteArray> =
+        ProducerRecord<String, ByteArray>(topic, null, key, payload).also { record ->
             headers.forEach { (name, value) -> record.headers().add(RecordHeader(name, value.toByteArray(Charsets.UTF_8))) }
         }
 
     private sealed interface Send
 
-    private class Sent(val future: CompletableFuture<SendResult<String, String>>) : Send
+    private class Sent(val future: CompletableFuture<SendResult<String, ByteArray>>) : Send
 
     private class Rejected(val cause: Throwable) : Send
 

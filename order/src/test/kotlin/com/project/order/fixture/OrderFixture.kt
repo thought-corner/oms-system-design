@@ -89,7 +89,7 @@ object OrderFixture {
         messageKey = DEFAULT_ORDER_ID.toString(),
         sagaId = sagaId,
         messageType = messageType,
-        payload = "{}",
+        payload = ByteArray(0),
         occurredAt = occurredAt,
     ).also { ReflectionTestUtils.setField(it, "status", status) }
 }

@@ -12,8 +12,6 @@ data class UseCancelCommand(
     val orderId: Long,
 )
 
-data class UseCancelResult(val refundedAmount: Long)
-
 data class DeadLetterCommand(
     val topic: String,
     val orderId: String?,

@@ -1,6 +1,7 @@
 package com.project.order.messaging
 
-import com.project.order.messaging.dto.SagaReplyMessage
+import com.project.message.order.SagaReply
+import com.project.order.messaging.dto.toCommand
 import com.project.order.service.ReplyDeadLetterService
 import com.project.order.service.SagaReplyService
 import com.project.order.service.dto.DeadLetterCommand
@@ -8,22 +9,20 @@ import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.kafka.support.KafkaHeaders
 import org.springframework.stereotype.Component
-import tools.jackson.databind.ObjectMapper
 
 @Component
 class SagaReplyConsumer(
     private val sagaReplyService: SagaReplyService,
     private val replyDeadLetterService: ReplyDeadLetterService,
-    private val objectMapper: ObjectMapper,
 ) {
 
     @KafkaListener(topics = [REPLY_TOPIC])
-    fun consume(record: ConsumerRecord<String, String>) {
-        val message = objectMapper.readValue(record.value(), SagaReplyMessage::class.java)
-        sagaReplyService.handle(message.toCommand(record.header(MESSAGE_TYPE_HEADER)))
+    fun consume(record: ConsumerRecord<String, ByteArray>) {
+        val reply = SagaReply.parseFrom(requireNotNull(record.value()) { "reply payload missing" })
+        sagaReplyService.handle(reply.toCommand(record.header(MESSAGE_TYPE_HEADER)))
     }
 
-    fun onDeadLetter(record: ConsumerRecord<String, String>) {
+    fun onDeadLetter(record: ConsumerRecord<String, ByteArray>) {
         replyDeadLetterService.alert(
             DeadLetterCommand(
                 topic = record.topic(),
@@ -36,7 +35,7 @@ class SagaReplyConsumer(
         )
     }
 
-    private fun ConsumerRecord<String, String>.header(name: String): String? =
+    private fun ConsumerRecord<String, ByteArray>.header(name: String): String? =
         headers().lastHeader(name)?.value()?.toString(Charsets.UTF_8)
 
     companion object {

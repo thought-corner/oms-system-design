@@ -2,6 +2,11 @@ package com.project.order.service
 
 import com.project.common.exception.BusinessException
 import com.project.common.exception.CommonErrorCode
+import com.project.message.order.PaymentCancelCommand
+import com.project.message.order.PaymentPayCommand
+import com.project.message.order.PointCancelCommand
+import com.project.message.order.PointUseCommand
+import com.project.message.order.StockCancelCommand
 import com.project.order.domain.OrderStatus
 import com.project.order.domain.SagaStatus
 import com.project.order.domain.SagaStep
@@ -37,10 +42,11 @@ class SagaReplyServiceTest : BehaviorSpec({
                 h.saga.attempts shouldBe 0
                 h.saga.updatedAt shouldBe OrderFixture.FIXED_TIME
                 h.messageTypes shouldContainExactly listOf("POINT_USE")
-                val payload = h.payloadOf("POINT_USE")
-                payload["amount"].asLong() shouldBe 400L
-                payload["userId"].asLong() shouldBe OrderFixture.DEFAULT_USER_ID
-                payload["sagaId"].asString() shouldBe OrderFixture.DEFAULT_SAGA_ID
+                val payload = PointUseCommand.parseFrom(h.payloadOf("POINT_USE"))
+                payload.amount shouldBe 400L
+                payload.userId shouldBe OrderFixture.DEFAULT_USER_ID
+                payload.sagaId shouldBe OrderFixture.DEFAULT_SAGA_ID
+                payload.orderId shouldBe OrderFixture.DEFAULT_ORDER_ID
                 h.saved.single().topic shouldBe "cmd.point"
                 h.saved.single().messageKey shouldBe "10"
             }
@@ -71,7 +77,9 @@ class SagaReplyServiceTest : BehaviorSpec({
                 h.saga.pointDone shouldBe true
                 h.saga.currentStep shouldBe SagaStep.PAYMENT
                 h.messageTypes shouldContainExactly listOf("PAYMENT_PAY")
-                h.payloadOf("PAYMENT_PAY")["amount"].asLong() shouldBe 400L
+                val payload = PaymentPayCommand.parseFrom(h.payloadOf("PAYMENT_PAY"))
+                payload.amount shouldBe 400L
+                payload.userId shouldBe OrderFixture.DEFAULT_USER_ID
                 h.saved.single().topic shouldBe "cmd.payment"
             }
         }
@@ -173,10 +181,11 @@ class SagaReplyServiceTest : BehaviorSpec({
                 h.order.status shouldBe OrderStatus.PLACING
                 h.messageTypes shouldContainExactly listOf("PAYMENT_CANCEL", "POINT_CANCEL", "STOCK_CANCEL")
                 h.saved.map { it.topic } shouldContainExactly listOf("cmd.payment", "cmd.point", "cmd.product")
-                val payload = h.payloadOf("STOCK_CANCEL")
-                payload["sagaId"].asString() shouldBe OrderFixture.DEFAULT_SAGA_ID
-                payload["orderId"].asLong() shouldBe OrderFixture.DEFAULT_ORDER_ID
-                payload.size() shouldBe 2
+                val payload = StockCancelCommand.parseFrom(h.payloadOf("STOCK_CANCEL"))
+                payload.sagaId shouldBe OrderFixture.DEFAULT_SAGA_ID
+                payload.orderId shouldBe OrderFixture.DEFAULT_ORDER_ID
+                PointCancelCommand.parseFrom(h.payloadOf("POINT_CANCEL")).sagaId shouldBe OrderFixture.DEFAULT_SAGA_ID
+                PaymentCancelCommand.parseFrom(h.payloadOf("PAYMENT_CANCEL")).orderId shouldBe OrderFixture.DEFAULT_ORDER_ID
             }
         }
     }

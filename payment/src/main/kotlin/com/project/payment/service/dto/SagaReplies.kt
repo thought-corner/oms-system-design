@@ -9,20 +9,6 @@ enum class ReplyDirection {
     FORWARD, CANCEL
 }
 
-enum class ReplyOutcome {
-    SUCCEEDED, FAILED
-}
-
-data class SagaReply(
-    val sagaId: String,
-    val orderId: Long,
-    val step: String,
-    val direction: ReplyDirection,
-    val outcome: ReplyOutcome,
-    val code: String?,
-    val result: Any,
-)
-
 data class DeadLetter(
     val topic: String,
     val orderId: String?,

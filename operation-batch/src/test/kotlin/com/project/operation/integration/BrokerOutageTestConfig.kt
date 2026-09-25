@@ -13,7 +13,7 @@ import org.testcontainers.kafka.KafkaContainer
 class BrokerOutageTestConfig {
 
     @Bean
-    fun outageProducerFactory(kafka: KafkaContainer): DefaultKafkaProducerFactory<String, String> =
+    fun outageProducerFactory(kafka: KafkaContainer): DefaultKafkaProducerFactory<String, ByteArray> =
         DefaultKafkaProducerFactory(
             KafkaProducerPolicy.configs() + mapOf(
                 ProducerConfig.BOOTSTRAP_SERVERS_CONFIG to kafka.bootstrapServers,
@@ -25,7 +25,7 @@ class BrokerOutageTestConfig {
 
     @Bean
     @Primary
-    fun outageKafkaTemplate(outageProducerFactory: DefaultKafkaProducerFactory<String, String>): KafkaTemplate<String, String> =
+    fun outageKafkaTemplate(outageProducerFactory: DefaultKafkaProducerFactory<String, ByteArray>): KafkaTemplate<String, ByteArray> =
         KafkaTemplate(outageProducerFactory)
 
     companion object {

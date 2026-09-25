@@ -64,7 +64,7 @@ class PaymentServiceConcurrencyTest : BehaviorSpec() {
                 paymentRepository,
                 SagaGuardLock(guardRepository, PaymentFixture.FIXED_CLOCK),
                 PaymentStateMachine(),
-                SagaReplyOutbox(outboxMessageRepository, PaymentFixture.JSON_MAPPER, PaymentFixture.FIXED_CLOCK),
+                SagaReplyOutbox(outboxMessageRepository, PaymentFixture.FIXED_CLOCK),
                 PaymentFixture.FIXED_CLOCK,
             )
             val executor = Executors.newFixedThreadPool(2)

@@ -1,6 +1,7 @@
 package com.project.operation.client
 
 import org.apache.kafka.clients.producer.ProducerConfig
+import org.apache.kafka.common.serialization.ByteArraySerializer
 import org.apache.kafka.common.serialization.StringSerializer
 import java.time.Duration
 
@@ -15,7 +16,7 @@ object KafkaProducerPolicy {
         ProducerConfig.ACKS_CONFIG to "all",
         ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG to "true",
         ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG to StringSerializer::class.java,
-        ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG to StringSerializer::class.java,
+        ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG to ByteArraySerializer::class.java,
         ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG to REQUEST_TIMEOUT.toMillis().toString(),
         ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG to DELIVERY_TIMEOUT.toMillis().toString(),
         ProducerConfig.MAX_BLOCK_MS_CONFIG to MAX_BLOCK.toMillis().toString(),

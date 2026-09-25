@@ -22,6 +22,8 @@ class OutboxServiceTest : BehaviorSpec({
         val repository = mockk<OutboxRepository>()
         val service = OutboxService(repository)
         val longError = "E".repeat(300)
+        val first = message(1)
+        val second = message(2)
         every { repository.findPendingFailCountsForUpdate(OutboxSource.ORDER, listOf(1L, 2L, 3L)) } returns mapOf(1L to 0, 2L to 4)
         every { repository.recordFailures(OutboxSource.ORDER, any()) } returns intArrayOf(1, 1)
 
@@ -29,16 +31,16 @@ class OutboxServiceTest : BehaviorSpec({
             val recorded = service.recordFailures(
                 OutboxSource.ORDER,
                 listOf(
-                    PublishFailure(message(1), "broker ack timed out"),
-                    PublishFailure(message(2), longError),
+                    PublishFailure(first, "broker ack timed out"),
+                    PublishFailure(second, longError),
                     PublishFailure(message(3), "broker ack timed out"),
                 ),
             )
 
             Then("fail_count 를 하나 올리고 5번째 실패만 FAILED 로 바꾸며 사유는 255자로 자른다") {
                 val expected = listOf(
-                    OutboxFailure(message(1), 1, OutboxStatus.PENDING, "broker ack timed out"),
-                    OutboxFailure(message(2), OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS, OutboxStatus.FAILED, "E".repeat(255)),
+                    OutboxFailure(first, 1, OutboxStatus.PENDING, "broker ack timed out"),
+                    OutboxFailure(second, OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS, OutboxStatus.FAILED, "E".repeat(255)),
                 )
                 recorded shouldContainExactly expected
                 verify(exactly = 1) { repository.recordFailures(OutboxSource.ORDER, expected) }

@@ -12,7 +12,7 @@ class LoggingAlertSenderTest : BehaviorSpec({
             CompensationFailedAlert("saga-1", 10L, 3, null, listOf("STOCK")),
             CompensationFailedAlert("saga-2", 11L, 3, null, emptyList()),
             OutboxStalledAlert("saga-1", 10L, "POINT_USE", "FAILED", LocalDateTime.of(2026, 9, 22, 3, 0), 1),
-            ReplyDeadLetterAlert(DeadLetterKind.POISON, "saga.replies-dlt", "10", "saga-1", "POINT_USE", "tools.jackson.core.JacksonException", "broken"),
+            ReplyDeadLetterAlert(DeadLetterKind.POISON, "saga.replies-dlt", "10", "saga-1", "POINT_USE", "com.google.protobuf.InvalidProtocolBufferException", "broken"),
         )
 
         When("모두 보내면") {

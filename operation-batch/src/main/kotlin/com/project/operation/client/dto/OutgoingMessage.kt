@@ -3,7 +3,7 @@ package com.project.operation.client.dto
 data class OutgoingMessage(
     val topic: String,
     val key: String?,
-    val payload: String?,
+    val payload: ByteArray?,
     val headers: Map<String, String>,
 )
 

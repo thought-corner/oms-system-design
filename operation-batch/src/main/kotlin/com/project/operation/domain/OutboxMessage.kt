@@ -9,7 +9,7 @@ data class OutboxMessage(
     val messageKey: String,
     val sagaId: String,
     val messageType: String,
-    val payload: String,
+    val payload: ByteArray,
 )
 
 data class OutboxBacklog(

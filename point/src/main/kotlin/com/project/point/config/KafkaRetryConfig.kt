@@ -33,7 +33,7 @@ class KafkaRetryConfig : RetryTopicConfigurationSupport() {
     }
 
     @Bean
-    fun pointCommandRetryTopic(template: KafkaTemplate<String, String>): RetryTopicConfiguration =
+    fun pointCommandRetryTopic(template: KafkaTemplate<String, ByteArray>): RetryTopicConfiguration =
         RetryTopicConfigurationBuilder.newInstance()
             .maxAttempts(CommandRetryPolicy.RETRY_TOPIC_DELAYS_MILLIS.size + 1)
             .customBackoff(DelayListBackOff(CommandRetryPolicy.RETRY_TOPIC_DELAYS_MILLIS))

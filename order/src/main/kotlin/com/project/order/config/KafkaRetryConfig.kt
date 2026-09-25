@@ -31,7 +31,7 @@ class KafkaRetryConfig : RetryTopicConfigurationSupport() {
     }
 
     @Bean
-    fun sagaReplyRetryTopic(template: KafkaTemplate<String, String>): RetryTopicConfiguration =
+    fun sagaReplyRetryTopic(template: KafkaTemplate<String, ByteArray>): RetryTopicConfiguration =
         RetryTopicConfigurationBuilder.newInstance()
             .maxAttempts(ReplyRetryPolicy.RETRY_TOPIC_DELAYS_MILLIS.size + 1)
             .customBackoff(DelayListBackOff(ReplyRetryPolicy.RETRY_TOPIC_DELAYS_MILLIS))

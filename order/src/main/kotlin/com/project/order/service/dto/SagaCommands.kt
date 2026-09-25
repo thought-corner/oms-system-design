@@ -27,27 +27,3 @@ enum class SagaCommandType(val topic: String, val step: SagaStep) {
             }
     }
 }
-
-data class StockBuyPayload(
-    val sagaId: String,
-    val orderId: Long,
-    val items: List<Item>,
-) {
-
-    data class Item(
-        val productId: Long,
-        val quantity: Long,
-    )
-}
-
-data class AmountPayload(
-    val sagaId: String,
-    val orderId: Long,
-    val userId: Long,
-    val amount: Long,
-)
-
-data class CancelPayload(
-    val sagaId: String,
-    val orderId: Long,
-)

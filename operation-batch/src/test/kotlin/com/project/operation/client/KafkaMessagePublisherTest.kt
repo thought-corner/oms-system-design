@@ -24,20 +24,20 @@ import java.time.Duration
 import java.util.concurrent.CompletableFuture
 
 private fun message(topic: String, key: String = "10") =
-    OutgoingMessage(topic = topic, key = key, payload = "{}", headers = mapOf("sagaId" to "saga-1"))
+    OutgoingMessage(topic = topic, key = key, payload = byteArrayOf(0x0A, 0x02), headers = mapOf("sagaId" to "saga-1"))
 
-private fun acked(): CompletableFuture<SendResult<String, String>> = CompletableFuture.completedFuture(mockk())
+private fun acked(): CompletableFuture<SendResult<String, ByteArray>> = CompletableFuture.completedFuture(mockk())
 
-private fun failed(cause: Throwable): CompletableFuture<SendResult<String, String>> =
-    CompletableFuture<SendResult<String, String>>().also { it.completeExceptionally(KafkaException("send failed", cause)) }
+private fun failed(cause: Throwable): CompletableFuture<SendResult<String, ByteArray>> =
+    CompletableFuture<SendResult<String, ByteArray>>().also { it.completeExceptionally(KafkaException("send failed", cause)) }
 
 class KafkaMessagePublisherTest : BehaviorSpec({
 
-    Given("메타데이터를 받지 못해 곧바로 실패하는 토픽의 행 둘과 정상 토픽의 행") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        every { template.send(match<ProducerRecord<String, String>> { it.topic() == "no.such.topic" }) } returns
-            failed(TimeoutException("Topic no.such.topic not present in metadata"))
-        every { template.send(match<ProducerRecord<String, String>> { it.topic() == "cmd.product" }) } returns acked()
+    Given("메타데이터를 받지 못해 보내는 순간 예외를 던지는 토픽의 행 둘과 정상 토픽의 행") {
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "no.such.topic" }) } throws
+            KafkaException("Send failed", TimeoutException("Topic no.such.topic not present in metadata"))
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "cmd.product" }) } returns acked()
         val publisher = KafkaMessagePublisher(template)
 
         When("한 배치로 보내면") {
@@ -54,14 +54,58 @@ class KafkaMessagePublisherTest : BehaviorSpec({
                 )
                 outcomes[0].error.orEmpty() shouldContain "TimeoutException"
                 outcomes[1].error.orEmpty() shouldContain "TimeoutException"
-                verify(exactly = 1) { template.send(match<ProducerRecord<String, String>> { it.topic() == "no.such.topic" }) }
+                verify(exactly = 1) { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "no.such.topic" }) }
+            }
+        }
+    }
+
+    Given("이미 실패로 끝난 future 를 돌려주는 토픽의 행 둘과 정상 토픽의 행") {
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "no.such.topic" }) } returns
+            failed(TimeoutException("Topic no.such.topic not present in metadata"))
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "cmd.product" }) } returns acked()
+        val publisher = KafkaMessagePublisher(template)
+
+        When("한 배치로 보내면") {
+            val outcomes = publisher.publishAll(
+                listOf(message("no.such.topic"), message("no.such.topic"), message("cmd.product")),
+                Duration.ofSeconds(5),
+            )
+
+            Then("깨진 토픽은 한 번만 시도하고 같은 토픽의 뒤 행은 보내지 않는다") {
+                outcomes.map { it.result } shouldContainExactly listOf(
+                    PublishResult.RETRIABLE_FAILURE,
+                    PublishResult.NOT_SENT,
+                    PublishResult.ACKED,
+                )
+                verify(exactly = 1) { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "no.such.topic" }) }
+            }
+        }
+    }
+
+    Given("같은 토픽에서 한 행만 직렬화에 실패해 보내는 순간 예외를 던지는 프로듀서") {
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.key() == "10" }) } throws
+            SerializationException("Can't convert value")
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.key() == "11" }) } returns acked()
+        val publisher = KafkaMessagePublisher(template)
+
+        When("같은 토픽의 두 행을 보내면") {
+            val outcomes = publisher.publishAll(
+                listOf(message("cmd.point", key = "10"), message("cmd.point", key = "11")),
+                Duration.ofSeconds(1),
+            )
+
+            Then("행의 문제라 그 행만 영구 실패로 두고 같은 토픽의 다음 행은 보낸다") {
+                outcomes.map { it.result } shouldContainExactly listOf(PublishResult.PERMANENT_FAILURE, PublishResult.ACKED)
+                verify(exactly = 2) { template.send(any<ProducerRecord<String, ByteArray>>()) }
             }
         }
     }
 
     Given("보내는 순간 예외를 던지는 프로듀서") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        every { template.send(any<ProducerRecord<String, String>>()) } throws IllegalStateException("producer closed")
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(any<ProducerRecord<String, ByteArray>>()) } throws IllegalStateException("producer closed")
         val publisher = KafkaMessagePublisher(template)
 
         When("보내면") {
@@ -75,8 +119,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
     }
 
     Given("브로커 확인이 오지 않는 행 뒤에 또 행이 있는 배치") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        every { template.send(any<ProducerRecord<String, String>>()) } answers {
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(any<ProducerRecord<String, ByteArray>>()) } answers {
             Thread.sleep(80)
             CompletableFuture()
         }
@@ -89,14 +133,14 @@ class KafkaMessagePublisherTest : BehaviorSpec({
                 outcomes.map { it.result } shouldContainExactly listOf(PublishResult.RETRIABLE_FAILURE, PublishResult.NOT_SENT)
                 outcomes[0].error shouldBe "broker ack timed out"
                 outcomes[1].error shouldBe "deadline exceeded before send"
-                verify(exactly = 1) { template.send(any<ProducerRecord<String, String>>()) }
+                verify(exactly = 1) { template.send(any<ProducerRecord<String, ByteArray>>()) }
             }
         }
     }
 
     Given("messageId·sagaId·messageType 헤더를 단 행") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        val record = slot<ProducerRecord<String, String>>()
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        val record = slot<ProducerRecord<String, ByteArray>>()
         every { template.send(capture(record)) } returns acked()
         val publisher = KafkaMessagePublisher(template)
 
@@ -106,24 +150,25 @@ class KafkaMessagePublisherTest : BehaviorSpec({
                     OutgoingMessage(
                         topic = "saga.replies",
                         key = "10",
-                        payload = "{}",
+                        payload = byteArrayOf(0x0A, 0x02),
                         headers = mapOf("messageId" to "message-1", "sagaId" to "saga-1", "messageType" to "STOCK_BUY"),
                     ),
                 ),
                 Duration.ofSeconds(1),
             )
 
-            Then("세 헤더가 UTF-8 로 레코드에 실린다") {
+            Then("세 헤더가 UTF-8 로, payload 바이트가 그대로 레코드에 실린다") {
                 val headers = record.captured.headers().associate { it.key() to it.value().toString(Charsets.UTF_8) }
                 headers shouldBe mapOf("messageId" to "message-1", "sagaId" to "saga-1", "messageType" to "STOCK_BUY")
                 record.captured.key() shouldBe "10"
+                record.captured.value() shouldBe byteArrayOf(0x0A, 0x02)
             }
         }
     }
 
     Given("늦게 실패로 끝나는 전송") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        every { template.send(any<ProducerRecord<String, String>>()) } answers {
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(any<ProducerRecord<String, ByteArray>>()) } answers {
             CompletableFuture.supplyAsync {
                 Thread.sleep(50)
                 throw KafkaException("delivery timeout", TimeoutException("Expiring 1 record(s)"))
@@ -142,8 +187,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
     }
 
     Given("브로커 연결이 끊겨 늦게 실패하는 전송") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        every { template.send(any<ProducerRecord<String, String>>()) } returns failed(NetworkException("Disconnected from node 1"))
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(any<ProducerRecord<String, ByteArray>>()) } returns failed(NetworkException("Disconnected from node 1"))
         val publisher = KafkaMessagePublisher(template)
 
         When("두 토픽으로 보내면") {
@@ -157,12 +202,12 @@ class KafkaMessagePublisherTest : BehaviorSpec({
     }
 
     Given("행 자체가 받아들여지지 않는 전송 셋") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        every { template.send(match<ProducerRecord<String, String>> { it.topic() == "cmd.product" }) } returns
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "cmd.product" }) } returns
             failed(RecordTooLargeException("The message is 2000000 bytes"))
-        every { template.send(match<ProducerRecord<String, String>> { it.topic() == "bad topic" }) } returns
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "bad topic" }) } returns
             failed(InvalidTopicException("Invalid topics: [bad topic]"))
-        every { template.send(match<ProducerRecord<String, String>> { it.topic() == "cmd.payment" }) } returns
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "cmd.payment" }) } returns
             failed(TopicAuthorizationException("Not authorized to access topics: [cmd.payment]"))
         val publisher = KafkaMessagePublisher(template)
 
@@ -180,8 +225,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
     }
 
     Given("직렬화에 실패해 보내는 순간 예외를 던지는 프로듀서") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        every { template.send(any<ProducerRecord<String, String>>()) } throws SerializationException("Can't convert value")
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(any<ProducerRecord<String, ByteArray>>()) } throws SerializationException("Can't convert value")
         val publisher = KafkaMessagePublisher(template)
 
         When("보내면") {
@@ -195,8 +240,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
     }
 
     Given("확인을 기다리는 중에 인터럽트된 스레드") {
-        val template = mockk<KafkaTemplate<String, String>>()
-        every { template.send(any<ProducerRecord<String, String>>()) } answers {
+        val template = mockk<KafkaTemplate<String, ByteArray>>()
+        every { template.send(any<ProducerRecord<String, ByteArray>>()) } answers {
             Thread.currentThread().interrupt()
             CompletableFuture()
         }

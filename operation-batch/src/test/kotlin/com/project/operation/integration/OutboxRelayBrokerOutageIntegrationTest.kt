@@ -57,10 +57,11 @@ class OutboxRelayBrokerOutageIntegrationTest : BehaviorSpec() {
 
     private fun insertHeld(topic: String, sagaId: String) {
         root.update(
-            "INSERT INTO ${OutboxSource.ORDER.table} (message_id, topic, message_key, saga_id, message_type, payload, status, occurred_at, claimed_at) VALUES (?, ?, '10', ?, 'STOCK_BUY', '{}', 'PENDING', NOW(6), NOW(6) + INTERVAL 1 DAY)",
+            "INSERT INTO ${OutboxSource.ORDER.table} (message_id, topic, message_key, saga_id, message_type, payload, status, occurred_at, claimed_at) VALUES (?, ?, '10', ?, 'STOCK_BUY', ?, 'PENDING', NOW(6), NOW(6) + INTERVAL 1 DAY)",
             UUID.randomUUID().toString(),
             topic,
             sagaId,
+            byteArrayOf(0x0A, 0x02),
         )
     }
 

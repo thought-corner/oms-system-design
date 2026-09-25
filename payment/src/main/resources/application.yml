@@ -14,6 +14,8 @@ spring:
     url: jdbc:mysql://127.0.0.1:3306/payment
     username: payment_user
     password: 1234
+    hikari:
+      maximum-pool-size: 16
   kafka:
     bootstrap-servers: 127.0.0.1:9092
     consumer:
@@ -21,11 +23,11 @@ spring:
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
       max-poll-records: 1
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
     listener:
       ack-mode: record
       concurrency: 12

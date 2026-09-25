@@ -1,6 +1,7 @@
 package com.project.order.service
 
 import com.project.common.exception.BusinessException
+import com.project.message.order.StockBuyCommand
 import com.project.order.domain.OrderSaga
 import com.project.order.domain.OrderStatus
 import com.project.order.domain.SagaStatus
@@ -93,9 +94,10 @@ class OrderPlacementServiceTest : BehaviorSpec({
                     saga.captured.currentStep shouldBe SagaStep.STOCK
                     h.messageTypes shouldContainExactly listOf("STOCK_BUY")
                     h.saved.single().sagaId shouldBe saga.captured.sagaId
-                    val items = h.payloadOf("STOCK_BUY")["items"]
-                    (0 until items.size()).map { items[it]["productId"].asLong() } shouldContainExactly listOf(1L, 2L)
-                    (0 until items.size()).map { items[it]["quantity"].asLong() } shouldContainExactly listOf(2L, 1L)
+                    val command = StockBuyCommand.parseFrom(h.payloadOf("STOCK_BUY"))
+                    command.sagaId shouldBe saga.captured.sagaId
+                    command.itemsList.map { it.productId } shouldContainExactly listOf(1L, 2L)
+                    command.itemsList.map { it.quantity } shouldContainExactly listOf(2L, 1L)
                 }
             }
         }

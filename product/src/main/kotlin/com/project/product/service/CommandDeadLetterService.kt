@@ -1,13 +1,13 @@
 package com.project.product.service
 
 import com.project.common.exception.CommonErrorCode
+import com.project.message.product.SagaDirection
 import com.project.product.client.AlertSender
 import com.project.product.client.DeadLetterAlert
 import com.project.product.client.DeadLetterKind
 import com.project.product.exception.NonRetryableExceptions
 import com.project.product.service.dto.DeadLetterCommand
 import com.project.product.service.dto.ProductCommandType
-import com.project.product.service.dto.SagaDirection
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -42,7 +42,7 @@ class CommandDeadLetterService(
 
     private fun replyForwardFailed(command: DeadLetterCommand): Boolean {
         ProductCommandType.entries.firstOrNull { it.name == command.messageType }
-            ?.takeIf { it.direction == SagaDirection.FORWARD }
+            ?.takeIf { it.direction == SagaDirection.SAGA_DIRECTION_FORWARD }
             ?: return false
         val orderId = command.orderId?.toLongOrNull() ?: return false
         val sagaId = command.sagaId?.takeIf(::isSagaId) ?: return false

@@ -53,7 +53,8 @@ class OutboxRelayTest : BehaviorSpec({
     Given("order 스키마는 권한 오류가 나고 payment 스키마에 세 행이 있는데 그중 한 행만 브로커 확인을 못 받는 경우") {
         val f = RelayFixture()
         every { f.outboxService.claim(OutboxSource.ORDER) } throws DataAccessResourceFailureException("SELECT command denied")
-        every { f.outboxService.claim(OutboxSource.PAYMENT) } returns listOf(message(1), message(2, "no.such.topic"), message(3))
+        val unknownTopic = message(2, "no.such.topic")
+        every { f.outboxService.claim(OutboxSource.PAYMENT) } returns listOf(message(1), unknownTopic, message(3))
         val sent = slot<List<OutgoingMessage>>()
         every { f.publisher.publishAll(capture(sent), OutboxRelayPolicy.PUBLISH_DEADLINE) } returns listOf(
             PublishOutcome(PublishResult.ACKED),
@@ -75,7 +76,7 @@ class OutboxRelayTest : BehaviorSpec({
                 verify(exactly = 2) {
                     f.outboxService.recordFailures(
                         OutboxSource.PAYMENT,
-                        listOf(PublishFailure(message(2, "no.such.topic"), "UnknownTopicOrPartitionException")),
+                        listOf(PublishFailure(unknownTopic, "UnknownTopicOrPartitionException")),
                     )
                 }
             }
@@ -84,7 +85,7 @@ class OutboxRelayTest : BehaviorSpec({
                 val first = sent.captured.first()
                 first.topic shouldBe "cmd.product"
                 first.key shouldBe "10"
-                first.payload shouldBe """{"id":1}"""
+                first.payload shouldBe byteArrayOf(0x08, 0x01)
                 first.headers shouldBe mapOf(
                     MessageHeaders.MESSAGE_ID to "message-1",
                     MessageHeaders.SAGA_ID to "saga-1",

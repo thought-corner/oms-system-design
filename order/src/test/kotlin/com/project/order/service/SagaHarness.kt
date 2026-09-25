@@ -13,8 +13,6 @@ import com.project.order.statemachine.OrderStateMachine
 import com.project.order.statemachine.SagaStateMachine
 import io.mockk.every
 import io.mockk.mockk
-import tools.jackson.databind.JsonNode
-import tools.jackson.module.kotlin.jacksonObjectMapper
 
 class SagaHarness(
     val order: Order = OrderFixture.order(status = OrderStatus.PLACING),
@@ -26,8 +24,7 @@ class SagaHarness(
     val orderItemRepository = mockk<OrderItemRepository>()
     val saved = mutableListOf<OutboxMessage>()
 
-    private val objectMapper = jacksonObjectMapper()
-    val commandOutbox = SagaCommandOutbox(outboxRepository, orderItemRepository, objectMapper, OrderFixture.FIXED_CLOCK)
+    val commandOutbox = SagaCommandOutbox(outboxRepository, orderItemRepository, OrderFixture.FIXED_CLOCK)
     val progress = SagaProgress(OrderStateMachine(), SagaStateMachine(), commandOutbox, OrderFixture.FIXED_CLOCK)
 
     init {
@@ -41,5 +38,5 @@ class SagaHarness(
     val messageTypes: List<String>
         get() = saved.map { it.messageType }
 
-    fun payloadOf(messageType: String): JsonNode = objectMapper.readTree(saved.single { it.messageType == messageType }.payload)
+    fun payloadOf(messageType: String): ByteArray = saved.single { it.messageType == messageType }.payload
 }

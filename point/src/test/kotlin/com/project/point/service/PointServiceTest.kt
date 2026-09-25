@@ -14,7 +14,6 @@ import com.project.point.service.dto.SagaDirection
 import com.project.point.service.dto.SagaOutcome
 import com.project.point.service.dto.SagaReply
 import com.project.point.service.dto.UseCancelCommand
-import com.project.point.service.dto.UseCancelResult
 import com.project.point.service.dto.UseCommand
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
@@ -121,9 +120,7 @@ class PointServiceTest : BehaviorSpec({
                 }
                 reply.captured.outcome shouldBe SagaOutcome.SUCCEEDED
                 reply.captured.direction shouldBe SagaDirection.FORWARD
-                reply.captured.step shouldBe "POINT"
                 reply.captured.code shouldBe null
-                reply.captured.result shouldBe emptyMap<String, Any>()
                 verify(exactly = 0) { pointRepository.findById(any()) }
                 verify(exactly = 1) {
                     historyRepository.save(match<PointTransactionHistory> { it.transactionType == PointTransactionType.USE })
@@ -204,13 +201,13 @@ class PointServiceTest : BehaviorSpec({
         When("보상을 요청하면") {
             val refunded = service.cancel(UseCancelCommand(sagaId = "saga-none", orderId = 1L))
 
-            Then("CANCEL 가드를 남기고 0을 돌려주며 실패 대신 0의 성공 응답을 남긴다") {
+            Then("CANCEL 가드를 남기고 0을 돌려주며 실패 대신 성공 응답을 남긴다") {
                 refunded shouldBe 0L
                 verify(exactly = 1) {
                     replyOutbox.append(
                         PointMessageType.POINT_CANCEL,
                         match {
-                            it.outcome == SagaOutcome.SUCCEEDED && it.direction == SagaDirection.CANCEL && it.result == UseCancelResult(0L)
+                            it.outcome == SagaOutcome.SUCCEEDED && it.direction == SagaDirection.CANCEL && it.code == null
                         },
                     )
                 }
@@ -243,7 +240,7 @@ class PointServiceTest : BehaviorSpec({
                 refunded shouldBe 400L
                 point.amount shouldBe 10000L
                 verify(exactly = 1) {
-                    replyOutbox.append(PointMessageType.POINT_CANCEL, match { it.result == UseCancelResult(400L) })
+                    replyOutbox.append(PointMessageType.POINT_CANCEL, match { it.outcome == SagaOutcome.SUCCEEDED && it.orderId == 1L })
                 }
                 verify(exactly = 1) {
                     historyRepository.save(
@@ -291,7 +288,6 @@ class PointServiceTest : BehaviorSpec({
                 reply.captured.outcome shouldBe SagaOutcome.FAILED
                 reply.captured.code shouldBe "INSUFFICIENT_POINT"
                 reply.captured.orderId shouldBe 1L
-                reply.captured.result shouldBe null
             }
         }
     }

@@ -17,13 +17,13 @@ import org.springframework.dao.DataAccessResourceFailureException
 
 private const val SAGA_ID = "7f1c2a4e-3b9d-4c1a-9e2f-0a1b2c3d4e5f"
 
-private const val JACKSON_FAILURE = "tools.jackson.databind.exc.MismatchedInputException"
+private const val PROTOBUF_FAILURE = "com.google.protobuf.InvalidProtocolBufferException"
 
 private fun deadLetter(
     messageType: String? = "POINT_USE",
     orderId: String? = "10",
     sagaId: String? = SAGA_ID,
-    exceptionClass: String? = JACKSON_FAILURE,
+    exceptionClass: String? = PROTOBUF_FAILURE,
 ) = DeadLetterCommand("cmd.point-dlt", orderId, sagaId, messageType, exceptionClass, "broken")
 
 private fun alertOf(alertSender: AlertSender): CommandDeadLetterAlert {

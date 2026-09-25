@@ -7,9 +7,8 @@ class NonRetryableExceptionsTest : BehaviorSpec({
 
     Given("다시 해도 결과가 같은 예외 이름") {
         val names = listOf(
-            "tools.jackson.core.JacksonException",
-            "tools.jackson.core.exc.StreamReadException",
-            "tools.jackson.databind.exc.MismatchedInputException",
+            "com.google.protobuf.InvalidProtocolBufferException",
+            "com.google.protobuf.InvalidProtocolBufferException${'$'}InvalidWireTypeException",
             "java.lang.ArithmeticException",
             "java.lang.IllegalArgumentException",
             "java.lang.NumberFormatException",
@@ -29,6 +28,7 @@ class NonRetryableExceptionsTest : BehaviorSpec({
             "org.springframework.dao.CannotAcquireLockException",
             "org.springframework.kafka.listener.ListenerExecutionFailedException",
             "java.lang.String",
+            "tools.jackson.core.JacksonException",
         )
 
         When("재시도 불가인지 물으면") {

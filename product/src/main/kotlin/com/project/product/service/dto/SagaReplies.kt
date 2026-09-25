@@ -1,16 +1,11 @@
 package com.project.product.service.dto
 
-import com.fasterxml.jackson.annotation.JsonInclude
-
-enum class SagaStep { STOCK }
-
-enum class SagaDirection { FORWARD, CANCEL }
-
-enum class SagaOutcome { SUCCEEDED, FAILED }
+import com.project.message.product.SagaDirection
+import com.project.message.product.SagaStep
 
 enum class ProductCommandType(val step: SagaStep, val direction: SagaDirection) {
-    STOCK_BUY(SagaStep.STOCK, SagaDirection.FORWARD),
-    STOCK_CANCEL(SagaStep.STOCK, SagaDirection.CANCEL),
+    STOCK_BUY(SagaStep.SAGA_STEP_STOCK, SagaDirection.SAGA_DIRECTION_FORWARD),
+    STOCK_CANCEL(SagaStep.SAGA_STEP_STOCK, SagaDirection.SAGA_DIRECTION_CANCEL),
     ;
 
     companion object {
@@ -19,18 +14,3 @@ enum class ProductCommandType(val step: SagaStep, val direction: SagaDirection) 
                 ?: throw IllegalArgumentException("messageType=$messageType")
     }
 }
-
-@JsonInclude(JsonInclude.Include.NON_NULL)
-data class SagaReply(
-    val sagaId: String,
-    val orderId: Long,
-    val step: SagaStep,
-    val direction: SagaDirection,
-    val outcome: SagaOutcome,
-    val code: String?,
-    val result: Any?,
-)
-
-data class BuyResult(val totalPrice: Long)
-
-data class BuyCancelResult(val restoredPrice: Long)

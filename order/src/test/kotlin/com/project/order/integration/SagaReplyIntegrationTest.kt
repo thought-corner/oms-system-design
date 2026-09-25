@@ -1,7 +1,15 @@
 package com.project.order.integration
 
+import com.project.message.order.PaymentCancelCommand
+import com.project.message.order.PointUseCommand
+import com.project.message.order.SagaDirection
+import com.project.message.order.SagaOutcome
+import com.project.message.order.SagaReply
+import com.project.message.order.SagaStep
+import com.project.message.order.StockBuyCommand
 import com.project.order.DbTag
 import com.project.order.client.AlertSender
+import com.project.order.client.DeadLetterKind
 import com.project.order.client.ReplyDeadLetterAlert
 import com.project.order.service.OrderPlacementService
 import com.project.order.service.OrderService
@@ -19,7 +27,6 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.kafka.core.KafkaTemplate
-import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
@@ -28,7 +35,7 @@ import kotlin.time.Duration.Companion.seconds
 class SagaReplyIntegrationTest : BehaviorSpec() {
 
     @Autowired
-    lateinit var kafkaTemplate: KafkaTemplate<String, String>
+    lateinit var kafkaTemplate: KafkaTemplate<String, ByteArray>
 
     @Autowired
     lateinit var orderService: OrderService
@@ -38,9 +45,6 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
 
     @Autowired
     lateinit var jdbcTemplate: JdbcTemplate
-
-    @Autowired
-    lateinit var objectMapper: ObjectMapper
 
     @Autowired
     lateinit var alertSender: AlertSender
@@ -57,15 +61,44 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
         return orderId to sagaId
     }
 
-    private fun reply(orderId: Long, sagaId: String, messageType: String, body: String) {
-        val record = ProducerRecord<String, String>(IntegrationTestConfig.REPLY_TOPIC, orderId.toString(), body)
+    private fun reply(orderId: Long, sagaId: String, messageType: String, body: ByteArray) {
+        val record = ProducerRecord<String, ByteArray>(IntegrationTestConfig.REPLY_TOPIC, orderId.toString(), body)
         record.headers().add("sagaId", sagaId.toByteArray())
         record.headers().add("messageType", messageType.toByteArray())
         kafkaTemplate.send(record).get()
     }
 
-    private fun replyBody(orderId: Long, sagaId: String, step: String, direction: String, outcome: String, extra: String = ""): String =
-        """{"sagaId":"$sagaId","orderId":$orderId,"step":"$step","direction":"$direction","outcome":"$outcome"$extra}"""
+    private fun forward(
+        orderId: Long,
+        sagaId: String,
+        step: SagaStep,
+        outcome: SagaOutcome = SagaOutcome.SAGA_OUTCOME_SUCCEEDED,
+        build: SagaReply.Builder.() -> Unit = {},
+    ): ByteArray =
+        replyBody(orderId, sagaId, step, SagaDirection.SAGA_DIRECTION_FORWARD, outcome, build)
+
+    private fun canceled(orderId: Long, sagaId: String, step: SagaStep, build: SagaReply.Builder.() -> Unit = {}): ByteArray =
+        replyBody(orderId, sagaId, step, SagaDirection.SAGA_DIRECTION_CANCEL, SagaOutcome.SAGA_OUTCOME_SUCCEEDED, build)
+
+    private fun replyBody(
+        orderId: Long,
+        sagaId: String,
+        step: SagaStep,
+        direction: SagaDirection,
+        outcome: SagaOutcome,
+        build: SagaReply.Builder.() -> Unit,
+    ): ByteArray =
+        SagaReply.newBuilder()
+            .setSagaId(sagaId)
+            .setOrderId(orderId)
+            .setStep(step)
+            .setDirection(direction)
+            .setOutcome(outcome)
+            .apply(build)
+            .build()
+            .toByteArray()
+
+    private fun payloadOf(command: Map<String, Any?>): ByteArray = command["payload"] as ByteArray
 
     private fun commands(sagaId: String): List<Map<String, Any?>> =
         jdbcTemplate.queryForList(
@@ -93,26 +126,24 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
                 command["message_key"] shouldBe orderId.toString()
                 command["message_type"] shouldBe "STOCK_BUY"
                 command["status"] shouldBe "PENDING"
-                val items = objectMapper.readTree(command["payload"] as String)["items"]
-                items[0]["productId"].asLong() shouldBe 1L
-                items[1]["productId"].asLong() shouldBe 2L
+                StockBuyCommand.parseFrom(payloadOf(command)).itemsList.map { it.productId } shouldContainExactly listOf(1L, 2L)
             }
 
             When("재고 성공 응답이 saga.replies 에 오면") {
-                reply(orderId, sagaId, "STOCK_BUY", replyBody(orderId, sagaId, "STOCK", "FORWARD", "SUCCEEDED", ""","result":{"totalPrice":400}"""))
+                reply(orderId, sagaId, "STOCK_BUY", forward(orderId, sagaId, SagaStep.SAGA_STEP_STOCK) { setTotalPrice(400L) })
 
                 Then("POINT_USE 400 이 outbox 에 들어간다") {
                     eventually(30.seconds) {
                         commands(sagaId).map { it["message_type"] } shouldContainExactly listOf("STOCK_BUY", "POINT_USE")
                     }
-                    val payload = objectMapper.readTree(commands(sagaId).last()["payload"] as String)
-                    payload["amount"].asLong() shouldBe 400L
-                    payload["userId"].asLong() shouldBe 1L
+                    val payload = PointUseCommand.parseFrom(payloadOf(commands(sagaId).last()))
+                    payload.amount shouldBe 400L
+                    payload.userId shouldBe 1L
                 }
             }
 
-            When("포인트 성공 응답이 code·result 없이 오면") {
-                reply(orderId, sagaId, "POINT_USE", replyBody(orderId, sagaId, "POINT", "FORWARD", "SUCCEEDED", ""","code":null,"result":{}"""))
+            When("포인트 성공 응답이 code·total_price 없이 오면") {
+                reply(orderId, sagaId, "POINT_USE", forward(orderId, sagaId, SagaStep.SAGA_STEP_POINT))
 
                 Then("PAYMENT_PAY 가 outbox 에 들어간다") {
                     eventually(30.seconds) {
@@ -122,7 +153,7 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
             }
 
             When("결제 성공 응답이 오면") {
-                reply(orderId, sagaId, "PAYMENT_PAY", replyBody(orderId, sagaId, "PAYMENT", "FORWARD", "SUCCEEDED", ""","result":{"paymentId":1,"paidAt":"2026-09-22T12:00:00"}"""))
+                reply(orderId, sagaId, "PAYMENT_PAY", forward(orderId, sagaId, SagaStep.SAGA_STEP_PAYMENT))
 
                 Then("AC-2 주문 COMPLETED · 사가 SUCCEEDED 로 닫히고 새 커맨드는 없다") {
                     eventually(30.seconds) {
@@ -136,11 +167,11 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
 
         Given("포인트 단계까지 간 주문") {
             val (orderId, sagaId) = placedOrder()
-            reply(orderId, sagaId, "STOCK_BUY", replyBody(orderId, sagaId, "STOCK", "FORWARD", "SUCCEEDED", ""","result":{"totalPrice":400}"""))
+            reply(orderId, sagaId, "STOCK_BUY", forward(orderId, sagaId, SagaStep.SAGA_STEP_STOCK) { setTotalPrice(400L) })
             eventually(30.seconds) { commands(sagaId).size shouldBe 2 }
 
             When("잔액 부족 실패 응답이 오면") {
-                reply(orderId, sagaId, "POINT_USE", replyBody(orderId, sagaId, "POINT", "FORWARD", "FAILED", ""","code":"INSUFFICIENT_POINT""""))
+                reply(orderId, sagaId, "POINT_USE", forward(orderId, sagaId, SagaStep.SAGA_STEP_POINT, SagaOutcome.SAGA_OUTCOME_FAILED) { setCode("INSUFFICIENT_POINT") })
 
                 Then("AC-4 사가 COMPENSATING · failure_code INSUFFICIENT_POINT 이고 세 보상 커맨드가 들어가며 주문은 PLACING 이다") {
                     eventually(30.seconds) {
@@ -150,15 +181,17 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
                     sagaRow(sagaId)["status"] shouldBe "COMPENSATING"
                     sagaRow(sagaId)["failure_code"] shouldBe "INSUFFICIENT_POINT"
                     orderStatus(orderId) shouldBe "PLACING"
-                    objectMapper.readTree(commands(sagaId).last()["payload"] as String).size() shouldBe 2
+                    val cancel = PaymentCancelCommand.parseFrom(payloadOf(commands(sagaId)[2]))
+                    cancel.sagaId shouldBe sagaId
+                    cancel.orderId shouldBe orderId
                 }
             }
 
             When("세 보상 응답이 오고 그중 하나가 중복되면") {
-                reply(orderId, sagaId, "PAYMENT_CANCEL", replyBody(orderId, sagaId, "PAYMENT", "CANCEL", "SUCCEEDED", ""","result":{"canceledAmount":0}"""))
-                reply(orderId, sagaId, "PAYMENT_CANCEL", replyBody(orderId, sagaId, "PAYMENT", "CANCEL", "SUCCEEDED", ""","result":{"canceledAmount":0}"""))
-                reply(orderId, sagaId, "POINT_CANCEL", replyBody(orderId, sagaId, "POINT", "CANCEL", "SUCCEEDED", ""","result":{"refundedAmount":0}"""))
-                reply(orderId, sagaId, "STOCK_CANCEL", replyBody(orderId, sagaId, "STOCK", "CANCEL", "SUCCEEDED", ""","result":{"restoredPrice":400}"""))
+                reply(orderId, sagaId, "PAYMENT_CANCEL", canceled(orderId, sagaId, SagaStep.SAGA_STEP_PAYMENT) { setTotalPrice(0L) })
+                reply(orderId, sagaId, "PAYMENT_CANCEL", canceled(orderId, sagaId, SagaStep.SAGA_STEP_PAYMENT) { setTotalPrice(0L) })
+                reply(orderId, sagaId, "POINT_CANCEL", canceled(orderId, sagaId, SagaStep.SAGA_STEP_POINT))
+                reply(orderId, sagaId, "STOCK_CANCEL", canceled(orderId, sagaId, SagaStep.SAGA_STEP_STOCK) { setTotalPrice(400L) })
 
                 Then("셋이 모두 온 뒤 사가 COMPENSATED · 주문 FAILED 로 닫힌다") {
                     eventually(30.seconds) {
@@ -177,13 +210,17 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
         Given("모양이 맞지 않는 응답") {
             val sagaId = UUID.randomUUID().toString()
 
-            When("깨진 JSON 이 saga.replies 에 오면") {
-                reply(999L, sagaId, "POINT_USE", "{not json")
+            When("깨진 바이트가 saga.replies 에 오면") {
+                reply(999L, sagaId, "POINT_USE", byteArrayOf(0x0A, 0x05, 0x73))
 
                 Then("B-12 재시도 없이 saga.replies-dlt 로 가서 운영자 알림이 울린다") {
                     eventually(30.seconds) {
                         verify(exactly = 1) {
-                            alertSender.send(match<ReplyDeadLetterAlert> { it.sagaId == sagaId && it.orderId == "999" && it.messageType == "POINT_USE" })
+                            alertSender.send(
+                                match<ReplyDeadLetterAlert> {
+                                    it.kind == DeadLetterKind.POISON && it.sagaId == sagaId && it.orderId == "999" && it.messageType == "POINT_USE"
+                                },
+                            )
                         }
                     }
                 }

@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.jpa)
     alias(libs.plugins.spring.boot)
     alias(libs.plugins.spring.dependency.management)
+    alias(libs.plugins.protobuf)
 }
 
 group = "com.project"
@@ -27,6 +28,7 @@ dependencies {
     implementation(libs.spring.boot.starter.kafka)
     implementation(libs.jackson.module.kotlin)
     implementation(libs.kotlin.reflect)
+    implementation(libs.protobuf.java)
 
     runtimeOnly(libs.mysql.connector.j)
     testImplementation(libs.spring.boot.starter.test)
@@ -52,6 +54,12 @@ kotlin {
     }
 }
 
+protobuf {
+    protoc {
+        artifact = libs.protobuf.protoc.get().toString()
+    }
+}
+
 allOpen {
     annotation("jakarta.persistence.Entity")
     annotation("jakarta.persistence.MappedSuperclass")
@@ -73,6 +81,7 @@ val coverageExclusions = listOf(
     "com/project/point/**/dto/**",
     "com/project/point/config/**",
     "com/project/point/init/**",
+    "com/project/message/**",
 )
 
 tasks.jacocoTestReport {

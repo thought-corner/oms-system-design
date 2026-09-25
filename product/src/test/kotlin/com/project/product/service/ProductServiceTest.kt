@@ -10,9 +10,7 @@ import com.project.product.repository.ProductRepository
 import com.project.product.repository.ProductTransactionHistoryRepository
 import com.project.product.repository.SagaGuardRepository
 import com.project.product.service.dto.BuyCancelCommand
-import com.project.product.service.dto.BuyCancelResult
 import com.project.product.service.dto.BuyCommand
-import com.project.product.service.dto.BuyResult
 import com.project.product.service.dto.ProductCommandType
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
@@ -113,7 +111,7 @@ class ProductServiceTest : BehaviorSpec({
                     historyRepository.findAllBySagaIdAndTransactionType("saga-1", any())
                     productRepository.findWithLockById(2L)
                     historyRepository.save(any())
-                    sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, "saga-1", 1L, BuyResult(600L))
+                    sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, "saga-1", 1L, 600L)
                 }
                 verify(exactly = 0) { productRepository.findById(any()) }
                 verify(exactly = 1) {
@@ -193,7 +191,7 @@ class ProductServiceTest : BehaviorSpec({
 
             Then("첫 번째 총액을 그대로 돌려주고 재고를 건드리지 않으며 같은 성공 응답을 다시 남긴다") {
                 totalPrice shouldBe 600L
-                verify(exactly = 1) { sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, "saga-1", 1L, BuyResult(600L)) }
+                verify(exactly = 1) { sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, "saga-1", 1L, 600L) }
                 verify(exactly = 0) { productRepository.findWithLockById(any()) }
                 verify(exactly = 0) { historyRepository.save(any()) }
             }
@@ -247,10 +245,10 @@ class ProductServiceTest : BehaviorSpec({
         When("보상을 요청하면") {
             val restored = service.cancel(BuyCancelCommand(sagaId = "saga-none", orderId = 1L))
 
-            Then("CANCEL 가드를 남기고 0을 돌려주며 실패 대신 0의 성공 응답을 남긴다") {
+            Then("CANCEL 가드를 남기고 0을 돌려주며 실패 대신 성공 응답을 남긴다") {
                 restored shouldBe 0L
                 verify(exactly = 1) {
-                    sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, "saga-none", 1L, BuyCancelResult(0L))
+                    sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, "saga-none", 1L, null)
                 }
                 verify(exactly = 0) { sagaReplyWriter.failed(any(), any(), any(), any()) }
                 verify(exactly = 1) { guardRepository.insertIfAbsent("saga-none", SagaGuardKind.CANCEL.name, any()) }
@@ -282,14 +280,14 @@ class ProductServiceTest : BehaviorSpec({
         When("보상을 요청하면") {
             val restored = service.cancel(BuyCancelCommand(sagaId = "saga-1", orderId = 1L))
 
-            Then("productId 오름차순으로 잠가 재고를 되돌리고 차감 이력의 주문으로 CANCEL 이력과 복구 금액 800의 성공 응답을 남긴다") {
+            Then("productId 오름차순으로 잠가 재고를 되돌리고 차감 이력의 주문으로 CANCEL 이력과 성공 응답을 남기고 복구 금액 800을 돌려준다") {
                 restored shouldBe 800L
                 product1.quantity shouldBe 100L
                 product3.quantity shouldBe 100L
                 verifyOrder {
                     productRepository.findWithLockById(1L)
                     productRepository.findWithLockById(3L)
-                    sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, "saga-1", 1L, BuyCancelResult(800L))
+                    sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, "saga-1", 1L, null)
                 }
                 verify(exactly = 2) {
                     historyRepository.save(
@@ -320,7 +318,7 @@ class ProductServiceTest : BehaviorSpec({
             Then("첫 번째 복구 금액을 그대로 돌려주고 재고를 두 번 되돌리지 않으며 같은 성공 응답을 다시 남긴다") {
                 restored shouldBe 600L
                 verify(exactly = 1) {
-                    sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, "saga-1", 1L, BuyCancelResult(600L))
+                    sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, "saga-1", 1L, null)
                 }
                 verify(exactly = 0) { productRepository.findWithLockById(any()) }
                 verify(exactly = 0) { historyRepository.save(any()) }

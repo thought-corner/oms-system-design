@@ -11,7 +11,6 @@ import com.project.payment.repository.PaymentRepository
 import com.project.payment.repository.SagaGuardRepository
 import com.project.payment.service.dto.PayCancelCommand
 import com.project.payment.service.dto.PayCommand
-import com.project.payment.service.dto.PayResult
 import com.project.payment.service.dto.PaymentMessageType
 import com.project.payment.statemachine.PaymentStateMachine
 import io.kotest.assertions.throwables.shouldThrow
@@ -44,7 +43,7 @@ private fun guardRepository(kind: SagaGuardKind = SagaGuardKind.FORWARD): SagaGu
 
 private fun sagaReplyOutbox(): SagaReplyOutbox =
     mockk<SagaReplyOutbox>().also {
-        every { it.succeeded(any(), any(), any(), any()) } just Runs
+        every { it.succeeded(any(), any(), any()) } just Runs
         every { it.failed(any(), any(), any(), any()) } just Runs
     }
 
@@ -81,7 +80,6 @@ class PaymentServiceTest : BehaviorSpec({
                         PaymentMessageType.PAYMENT_PAY,
                         PaymentFixture.DEFAULT_SAGA_ID,
                         PaymentFixture.DEFAULT_ORDER_ID,
-                        PayResult(7L, PaymentFixture.FIXED_PAID_AT),
                     )
                 }
             }
@@ -112,7 +110,6 @@ class PaymentServiceTest : BehaviorSpec({
                         PaymentMessageType.PAYMENT_PAY,
                         PaymentFixture.DEFAULT_SAGA_ID,
                         PaymentFixture.DEFAULT_ORDER_ID,
-                        PayResult(1L, PaymentFixture.FIXED_PAID_AT),
                     )
                 }
                 result.paidAt shouldBe PaymentFixture.FIXED_PAID_AT
@@ -136,7 +133,7 @@ class PaymentServiceTest : BehaviorSpec({
                     guardRepository.insertIfAbsent("saga-none", SagaGuardKind.CANCEL.name, any())
                     guardRepository.findWithLockBySagaId("saga-none")
                     paymentRepository.findBySagaId("saga-none")
-                    sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_CANCEL, "saga-none", 1L, emptyMap<String, Any>())
+                    sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_CANCEL, "saga-none", 1L)
                 }
                 verify(exactly = 0) { paymentRepository.save(any()) }
             }
@@ -165,7 +162,7 @@ class PaymentServiceTest : BehaviorSpec({
             Then("CANCELED 그대로이고 보상 응답은 매번 성공이다") {
                 payment.status shouldBe PaymentStatus.CANCELED
                 verify(exactly = 2) {
-                    sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_CANCEL, PaymentFixture.DEFAULT_SAGA_ID, 1L, emptyMap<String, Any>())
+                    sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_CANCEL, PaymentFixture.DEFAULT_SAGA_ID, 1L)
                 }
             }
         }

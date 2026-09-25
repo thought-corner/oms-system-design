@@ -85,7 +85,7 @@ class PaymentService(
             ?.takeUnless { it.isCanceled() }
             ?.let { cancelPaid(it) }
 
-        sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_CANCEL, command.sagaId, command.orderId, emptyMap<String, Any>())
+        sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_CANCEL, command.sagaId, command.orderId)
     }
 
     private fun cancelPaid(payment: Payment) {
@@ -97,7 +97,7 @@ class PaymentService(
     }
 
     private fun repliedPay(command: PayCommand, result: PayResult): PayResult {
-        sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_PAY, command.sagaId, command.orderId, result)
+        sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_PAY, command.sagaId, command.orderId)
         return result
     }
 

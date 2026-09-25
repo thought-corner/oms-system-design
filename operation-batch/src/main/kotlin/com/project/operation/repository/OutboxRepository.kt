@@ -35,7 +35,7 @@ class OutboxRepository(
                 messageKey = rs.getString("message_key"),
                 sagaId = rs.getString("saga_id"),
                 messageType = rs.getString("message_type"),
-                payload = rs.getString("payload"),
+                payload = rs.getBytes("payload"),
             )
         }
 

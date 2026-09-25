@@ -18,7 +18,7 @@ class PointCommandDeadLetterHandlerTest : BehaviorSpec({
         val service = mockk<CommandDeadLetterService>()
         val reported = slot<DeadLetterCommand>()
         every { service.handle(capture(reported)) } just Runs
-        val record = ConsumerRecord("cmd.point-dlt", 1, 5L, "10", "{}").also {
+        val record = ConsumerRecord("cmd.point-dlt", 1, 5L, "10", byteArrayOf()).also {
             it.headers().add(MessageHeaders.SAGA_ID, "saga-1".toByteArray())
             it.headers().add(MessageHeaders.MESSAGE_TYPE, "POINT_USE".toByteArray())
             it.headers().add(KafkaHeaders.EXCEPTION_FQCN, "org.springframework.kafka.listener.ListenerExecutionFailedException".toByteArray())
@@ -46,15 +46,15 @@ class PointCommandDeadLetterHandlerTest : BehaviorSpec({
         val service = mockk<CommandDeadLetterService>()
         val reported = slot<DeadLetterCommand>()
         every { service.handle(capture(reported)) } just Runs
-        val record = ConsumerRecord("cmd.point-dlt", 0, 0L, "10", "{").also {
-            it.headers().add(KafkaHeaders.EXCEPTION_FQCN, "tools.jackson.core.exc.StreamReadException".toByteArray())
+        val record = ConsumerRecord("cmd.point-dlt", 0, 0L, "10", byteArrayOf(0x0a)).also {
+            it.headers().add(KafkaHeaders.EXCEPTION_FQCN, "com.google.protobuf.InvalidProtocolBufferException".toByteArray())
         }
 
         When("DLT 핸들러가 받으면") {
             PointCommandDeadLetterHandler(service).handle(record)
 
             Then("예외 클래스 헤더로 대신하고 없는 헤더는 null 로 보고한다") {
-                reported.captured.exceptionClass shouldBe "tools.jackson.core.exc.StreamReadException"
+                reported.captured.exceptionClass shouldBe "com.google.protobuf.InvalidProtocolBufferException"
                 reported.captured.sagaId shouldBe null
                 reported.captured.messageType shouldBe null
             }

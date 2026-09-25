@@ -1,6 +1,6 @@
 package com.project.order.config
 
-import tools.jackson.core.JacksonException
+import com.google.protobuf.InvalidProtocolBufferException
 
 object ReplyRetryPolicy {
     const val REPLY_TOPIC = "saga.replies"
@@ -16,7 +16,7 @@ object ReplyRetryPolicy {
     val RETRY_TOPIC_DELAYS_MILLIS: List<Long> = listOf(60_000L, 300_000L, 1_800_000L)
 
     val NON_RETRYABLE: List<Class<out Exception>> = listOf(
-        JacksonException::class.java,
+        InvalidProtocolBufferException::class.java,
         ArithmeticException::class.java,
         IllegalArgumentException::class.java,
     )

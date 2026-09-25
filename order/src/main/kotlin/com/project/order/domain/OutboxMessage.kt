@@ -27,8 +27,8 @@ class OutboxMessage(
     val sagaId: String,
     @Column(name = "message_type", nullable = false, length = 50, updatable = false)
     val messageType: String,
-    @Column(name = "payload", nullable = false, columnDefinition = "TEXT", updatable = false)
-    val payload: String,
+    @Column(name = "payload", nullable = false, columnDefinition = "BLOB", updatable = false)
+    val payload: ByteArray,
     @Column(name = "occurred_at", nullable = false, updatable = false)
     val occurredAt: LocalDateTime,
 ) {

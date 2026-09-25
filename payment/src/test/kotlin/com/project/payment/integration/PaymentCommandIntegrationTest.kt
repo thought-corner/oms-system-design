@@ -1,5 +1,11 @@
 package com.project.payment.integration
 
+import com.project.message.payment.PaymentCancelCommand
+import com.project.message.payment.PaymentPayCommand
+import com.project.message.payment.SagaDirection
+import com.project.message.payment.SagaOutcome
+import com.project.message.payment.SagaReply
+import com.project.message.payment.SagaStep
 import com.project.payment.DbTag
 import com.project.payment.client.AlertSender
 import com.project.payment.client.DeadLetterAlert
@@ -21,14 +27,13 @@ import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.header.internals.RecordHeader
+import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.kafka.core.KafkaTemplate
 import org.testcontainers.kafka.KafkaContainer
-import tools.jackson.databind.JsonNode
-import tools.jackson.databind.json.JsonMapper
 import java.time.Duration
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
@@ -41,7 +46,7 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
     lateinit var kafka: KafkaContainer
 
     @Autowired
-    lateinit var kafkaTemplate: KafkaTemplate<String, String>
+    lateinit var kafkaTemplate: KafkaTemplate<String, ByteArray>
 
     @Autowired
     lateinit var paymentRepository: PaymentRepository
@@ -52,37 +57,39 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
     @Autowired
     lateinit var alertSender: AlertSender
 
-    @Autowired
-    lateinit var jsonMapper: JsonMapper
-
-    private fun send(orderId: Long, sagaId: String, messageType: String, payload: String) {
-        val record = ProducerRecord<String, String>(IntegrationTestConfig.COMMAND_TOPIC, orderId.toString(), payload)
+    private fun send(orderId: Long, sagaId: String, messageType: String, payload: ByteArray) {
+        val record = ProducerRecord<String, ByteArray>(IntegrationTestConfig.COMMAND_TOPIC, orderId.toString(), payload)
         record.headers().add(RecordHeader("sagaId", sagaId.toByteArray()))
         record.headers().add(RecordHeader("messageType", messageType.toByteArray()))
         kafkaTemplate.send(record).get()
     }
 
     private fun pay(orderId: Long, sagaId: String) =
-        send(orderId, sagaId, "PAYMENT_PAY", """{"sagaId":"$sagaId","orderId":$orderId,"userId":1,"amount":400}""")
+        send(
+            orderId,
+            sagaId,
+            "PAYMENT_PAY",
+            PaymentPayCommand.newBuilder().setSagaId(sagaId).setOrderId(orderId).setUserId(1L).setAmount(400L).build().toByteArray(),
+        )
 
     private fun replyOf(sagaId: String, messageType: String): OutboxMessage? =
         outboxMessageRepository.findAllBySagaId(sagaId).singleOrNull { it.messageType == messageType }
 
-    private fun OutboxMessage.body(): JsonNode = jsonMapper.readTree(payload)
+    private fun OutboxMessage.body(): SagaReply = SagaReply.parseFrom(payload)
 
-    private fun records(topic: String, sagaId: String, wait: Duration): List<ConsumerRecord<String, String>> =
-        KafkaConsumer<String, String>(
+    private fun records(topic: String, sagaId: String, wait: Duration): List<ConsumerRecord<String, ByteArray>> =
+        KafkaConsumer<String, ByteArray>(
             mapOf(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG to kafka.bootstrapServers,
                 ConsumerConfig.GROUP_ID_CONFIG to "it-${UUID.randomUUID()}",
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG to "earliest",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG to StringDeserializer::class.java,
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG to StringDeserializer::class.java,
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG to ByteArrayDeserializer::class.java,
             ),
         ).use { consumer ->
             consumer.subscribe(listOf(topic))
             val deadline = System.nanoTime() + wait.toNanos()
-            val received = mutableListOf<ConsumerRecord<String, String>>()
+            val received = mutableListOf<ConsumerRecord<String, ByteArray>>()
             while (System.nanoTime() < deadline) {
                 received += consumer.poll(Duration.ofMillis(500))
             }
@@ -110,8 +117,8 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
                         reply.status shouldBe OutboxStatus.PENDING
                         reply.failCount shouldBe 0
                         reply.messageId.length shouldBe 36
-                        reply.body().get("outcome").asString() shouldBe "SUCCEEDED"
-                        reply.body().get("result").get("paymentId").asLong() shouldBe payment.id
+                        reply.body().outcome shouldBe SagaOutcome.SAGA_OUTCOME_SUCCEEDED
+                        reply.body().hasCode() shouldBe false
                     }
                 }
             }
@@ -123,32 +130,32 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
                 Then("결제는 늘지 않고 롤백과 분리된 트랜잭션에서 ALREADY_PAID 실패 응답이 남는다") {
                     eventually(30.seconds) {
                         val reply = replyOf(otherSagaId, "PAYMENT_PAY").shouldNotBeNull()
-                        reply.body().get("outcome").asString() shouldBe "FAILED"
-                        reply.body().get("code").asString() shouldBe "ALREADY_PAID"
+                        reply.body().outcome shouldBe SagaOutcome.SAGA_OUTCOME_FAILED
+                        reply.body().code shouldBe "ALREADY_PAID"
                     }
                     paymentRepository.findBySagaId(otherSagaId) shouldBe null
                 }
             }
 
             When("같은 사가의 PAYMENT_CANCEL 이 오면") {
-                send(orderId, sagaId, "PAYMENT_CANCEL", """{"sagaId":"$sagaId","orderId":$orderId}""")
+                send(orderId, sagaId, "PAYMENT_CANCEL", PaymentCancelCommand.newBuilder().setSagaId(sagaId).setOrderId(orderId).build().toByteArray())
 
                 Then("결제가 CANCELED 가 되고 빈 결과의 SUCCEEDED 응답이 남는다") {
                     eventually(30.seconds) {
                         paymentRepository.findBySagaId(sagaId)?.status shouldBe PaymentStatus.CANCELED
                         val reply = replyOf(sagaId, "PAYMENT_CANCEL").shouldNotBeNull()
-                        reply.body().get("direction").asString() shouldBe "CANCEL"
-                        reply.body().get("outcome").asString() shouldBe "SUCCEEDED"
+                        reply.body().direction shouldBe SagaDirection.SAGA_DIRECTION_CANCEL
+                        reply.body().outcome shouldBe SagaOutcome.SAGA_OUTCOME_SUCCEEDED
                     }
                 }
             }
         }
 
-        Given("JSON 이 깨진 커맨드") {
+        Given("Protobuf 바이트가 깨진 커맨드") {
             val sagaId = UUID.randomUUID().toString()
 
             When("cmd.payment 에 들어오면") {
-                send(502L, sagaId, "PAYMENT_PAY", "{not json")
+                send(502L, sagaId, "PAYMENT_PAY", byteArrayOf(0x0A, 0x7F, 0x01))
 
                 Then("재시도 토픽을 거치지 않고 cmd.payment-dlt 로 가서 INTERNAL_ERROR 실패 응답과 POISON 알림을 남긴다") {
                     val dead = records(IntegrationTestConfig.DLT_TOPIC, sagaId, Duration.ofSeconds(10))
@@ -171,12 +178,13 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
                     reply.messageKey shouldBe "502"
                     reply.messageType shouldBe "PAYMENT_PAY"
                     reply.status shouldBe OutboxStatus.PENDING
-                    reply.body().get("sagaId").asString() shouldBe sagaId
-                    reply.body().get("orderId").asLong() shouldBe 502L
-                    reply.body().get("step").asString() shouldBe "PAYMENT"
-                    reply.body().get("direction").asString() shouldBe "FORWARD"
-                    reply.body().get("outcome").asString() shouldBe "FAILED"
-                    reply.body().get("code").asString() shouldBe "INTERNAL_ERROR"
+                    reply.body().sagaId shouldBe sagaId
+                    reply.body().orderId shouldBe 502L
+                    reply.body().step shouldBe SagaStep.SAGA_STEP_PAYMENT
+                    reply.body().direction shouldBe SagaDirection.SAGA_DIRECTION_FORWARD
+                    reply.body().outcome shouldBe SagaOutcome.SAGA_OUTCOME_FAILED
+                    reply.body().code shouldBe "INTERNAL_ERROR"
+                    reply.body().hasTotalPrice() shouldBe false
                 }
             }
         }

@@ -8,11 +8,10 @@ import com.project.product.exception.ProductErrorCode
 import com.project.product.repository.ProductRepository
 import com.project.product.repository.ProductTransactionHistoryRepository
 import com.project.product.service.dto.BuyCancelCommand
-import com.project.product.service.dto.BuyCancelResult
 import com.project.product.service.dto.BuyCommand
-import com.project.product.service.dto.BuyResult
 import com.project.product.service.dto.ProductCommandType
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.LocalDateTime
@@ -37,16 +36,16 @@ class ProductService(
         val purchaseHistories = historyRepository.findAllBySagaIdAndTransactionType(command.sagaId, ProductTransactionType.PURCHASE)
         val totalPrice = if (purchaseHistories.isNotEmpty()) purchaseHistories.sumOf { it.price } else purchase(command)
 
-        sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, command.sagaId, command.orderId, BuyResult(totalPrice))
+        sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, command.sagaId, command.orderId, totalPrice)
         return totalPrice
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun replyBuyFailed(command: BuyCommand, errorCode: ErrorCode) {
         replyBuyFailed(command.sagaId, command.orderId, errorCode)
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun replyBuyFailed(sagaId: String, orderId: Long, errorCode: ErrorCode) {
         sagaReplyWriter.failed(ProductCommandType.STOCK_BUY, sagaId, orderId, errorCode.code)
     }
@@ -57,7 +56,7 @@ class ProductService(
 
         val restoredPrice = restore(command.sagaId)
 
-        sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, command.sagaId, command.orderId, BuyCancelResult(restoredPrice))
+        sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, command.sagaId, command.orderId)
         return restoredPrice
     }
 

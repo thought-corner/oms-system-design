@@ -22,6 +22,7 @@ import io.mockk.verify
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.consumer.KafkaConsumer
+import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -84,13 +85,16 @@ class OutboxRelayIntegrationTest : BehaviorSpec() {
             "10",
             sagaId,
             "STOCK_BUY",
-            """{"sagaId":"$sagaId"}""",
+            payloadOf(sagaId),
             status,
             failCount,
             occurredAt,
         )
         return messageId
     }
+
+    private fun payloadOf(sagaId: String): ByteArray =
+        byteArrayOf(0x0A, sagaId.length.toByte()) + sagaId.toByteArray(Charsets.UTF_8)
 
     private fun releaseTogether(source: OutboxSource, vararg sagaIds: String) {
         root.update(
@@ -108,18 +112,18 @@ class OutboxRelayIntegrationTest : BehaviorSpec() {
     private fun claimedAt(source: OutboxSource, sagaId: String): LocalDateTime? =
         root.queryForObject("SELECT claimed_at FROM ${source.table} WHERE saga_id = ?", LocalDateTime::class.java, sagaId)
 
-    private fun consumer(topic: String): KafkaConsumer<String, String> =
-        KafkaConsumer<String, String>(
+    private fun consumer(topic: String): KafkaConsumer<String, ByteArray> =
+        KafkaConsumer<String, ByteArray>(
             mapOf(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG to kafka.bootstrapServers,
                 ConsumerConfig.GROUP_ID_CONFIG to "it-${UUID.randomUUID()}",
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG to "earliest",
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG to StringDeserializer::class.java,
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG to StringDeserializer::class.java,
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG to ByteArrayDeserializer::class.java,
             ),
         ).also { it.subscribe(listOf(topic)) }
 
-    private fun ConsumerRecord<String, String>.header(name: String): String? =
+    private fun ConsumerRecord<String, ByteArray>.header(name: String): String? =
         headers().lastHeader(name)?.value()?.toString(Charsets.UTF_8)
 
     init {
@@ -146,12 +150,12 @@ class OutboxRelayIntegrationTest : BehaviorSpec() {
 
                 Then("레코드는 키 orderId, 값 payload, 헤더 messageId·sagaId·messageType 으로 도착한다") {
                     consumer(IntegrationTestConfig.REPLY_TOPIC).use { consumer ->
-                        val received = mutableListOf<ConsumerRecord<String, String>>()
+                        val received = mutableListOf<ConsumerRecord<String, ByteArray>>()
                         eventually(20.seconds) {
                             received += consumer.poll(Duration.ofMillis(500))
                             val record = received.single { it.header("sagaId") == paymentSaga }
                             record.key() shouldBe "10"
-                            record.value() shouldBe """{"sagaId":"$paymentSaga"}"""
+                            record.value() shouldBe payloadOf(paymentSaga)
                             record.header("messageType") shouldBe "STOCK_BUY"
                             record.header("messageId") shouldBe paymentMessageId
                         }
@@ -295,7 +299,8 @@ class OutboxRelayIntegrationTest : BehaviorSpec() {
             Then("outbox 에 행을 넣거나 서비스의 다른 테이블을 읽을 수 없다") {
                 val insertDenied = runCatching {
                     operationJdbc.update(
-                        "INSERT INTO ${OutboxSource.ORDER.table} (message_id, topic, message_key, saga_id, message_type, payload, status, occurred_at) VALUES ('i', 't', 'k', 's', 'm', 'p', 'PENDING', NOW(6))",
+                        "INSERT INTO ${OutboxSource.ORDER.table} (message_id, topic, message_key, saga_id, message_type, payload, status, occurred_at) VALUES ('i', 't', 'k', 's', 'm', ?, 'PENDING', NOW(6))",
+                        byteArrayOf(0x0A),
                     )
                 }.exceptionOrNull()
                 val readDenied = runCatching { operationJdbc.queryForList("SELECT 1 FROM `order`.`order_saga`") }.exceptionOrNull()

@@ -26,9 +26,9 @@ private fun kindOf(exceptionClass: String?): DeadLetterKind {
 
 class ReplyDeadLetterServiceTest : BehaviorSpec({
 
-    Given("JSON 을 읽지 못해 곧장 DLT 로 간 응답") {
+    Given("Protobuf 를 읽지 못해 곧장 DLT 로 간 응답") {
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val command = deadLetter("tools.jackson.core.JacksonException")
+        val command = deadLetter("com.google.protobuf.InvalidProtocolBufferException")
 
         When("DLT 핸들러가 넘기면") {
             ReplyDeadLetterService(alertSender).alert(command)
@@ -42,7 +42,7 @@ class ReplyDeadLetterServiceTest : BehaviorSpec({
                             "10",
                             "saga-1",
                             "POINT_USE",
-                            "tools.jackson.core.JacksonException",
+                            "com.google.protobuf.InvalidProtocolBufferException",
                             "broken",
                         ),
                     )
@@ -55,7 +55,7 @@ class ReplyDeadLetterServiceTest : BehaviorSpec({
 
         When("분류하면") {
             val kinds = listOf(
-                "tools.jackson.core.exc.StreamReadException",
+                "com.google.protobuf.InvalidProtocolBufferException\$InvalidWireTypeException",
                 "java.lang.ArithmeticException",
                 "java.lang.NumberFormatException",
             ).map { kindOf(it) }

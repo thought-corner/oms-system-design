@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package msa.saga.v1;
+
+option java_multiple_files = true;
+option java_package = "com.project.message.payment";
+
+enum SagaStep {
+  SAGA_STEP_UNSPECIFIED = 0;
+  SAGA_STEP_STOCK = 1;
+  SAGA_STEP_POINT = 2;
+  SAGA_STEP_PAYMENT = 3;
+}
+
+enum SagaDirection {
+  SAGA_DIRECTION_UNSPECIFIED = 0;
+  SAGA_DIRECTION_FORWARD = 1;
+  SAGA_DIRECTION_CANCEL = 2;
+}
+
+enum SagaOutcome {
+  SAGA_OUTCOME_UNSPECIFIED = 0;
+  SAGA_OUTCOME_SUCCEEDED = 1;
+  SAGA_OUTCOME_FAILED = 2;
+}
+
+message StockBuyCommand {
+  message Item {
+    int64 product_id = 1;
+    int64 quantity = 2;
+  }
+  string saga_id = 1;
+  int64 order_id = 2;
+  repeated Item items = 3;
+}
+
+message StockCancelCommand {
+  string saga_id = 1;
+  int64 order_id = 2;
+}
+
+message PointUseCommand {
+  string saga_id = 1;
+  int64 order_id = 2;
+  int64 user_id = 3;
+  int64 amount = 4;
+}
+
+message PointCancelCommand {
+  string saga_id = 1;
+  int64 order_id = 2;
+}
+
+message PaymentPayCommand {
+  string saga_id = 1;
+  int64 order_id = 2;
+  int64 user_id = 3;
+  int64 amount = 4;
+}
+
+message PaymentCancelCommand {
+  string saga_id = 1;
+  int64 order_id = 2;
+}
+
+message SagaReply {
+  string saga_id = 1;
+  int64 order_id = 2;
+  SagaStep step = 3;
+  SagaDirection direction = 4;
+  SagaOutcome outcome = 5;
+  optional string code = 6;
+  optional int64 total_price = 7;
+}

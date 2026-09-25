@@ -5,5 +5,4 @@ object MessageContract {
     const val REPLY_TOPIC: String = "saga.replies"
     const val SAGA_ID_HEADER: String = "sagaId"
     const val MESSAGE_TYPE_HEADER: String = "messageType"
-    const val STEP: String = "PAYMENT"
 }

@@ -11,7 +11,7 @@ class PointCommandDeadLetterHandler(
     private val commandDeadLetterService: CommandDeadLetterService,
 ) {
 
-    fun handle(record: ConsumerRecord<String, String>) {
+    fun handle(record: ConsumerRecord<String, ByteArray>) {
         commandDeadLetterService.handle(
             DeadLetterCommand(
                 topic = record.topic(),

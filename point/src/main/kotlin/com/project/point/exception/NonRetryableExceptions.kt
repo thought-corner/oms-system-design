@@ -1,11 +1,11 @@
 package com.project.point.exception
 
-import tools.jackson.core.JacksonException
+import com.google.protobuf.InvalidProtocolBufferException
 
 object NonRetryableExceptions {
 
     val TYPES: List<Class<out Exception>> = listOf(
-        JacksonException::class.java,
+        InvalidProtocolBufferException::class.java,
         ArithmeticException::class.java,
         IllegalArgumentException::class.java,
     )

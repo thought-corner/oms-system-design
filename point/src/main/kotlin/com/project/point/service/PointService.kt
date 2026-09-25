@@ -10,7 +10,6 @@ import com.project.point.repository.PointTransactionHistoryRepository
 import com.project.point.service.dto.PointMessageType
 import com.project.point.service.dto.SagaReply
 import com.project.point.service.dto.UseCancelCommand
-import com.project.point.service.dto.UseCancelResult
 import com.project.point.service.dto.UseCommand
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -40,7 +39,7 @@ class PointService(
 
         sagaReplyOutbox.append(
             PointMessageType.POINT_USE,
-            SagaReply.succeeded(PointMessageType.POINT_USE, command.sagaId, command.orderId, emptyMap<String, Any>()),
+            SagaReply.succeeded(PointMessageType.POINT_USE, command.sagaId, command.orderId),
         )
     }
 
@@ -64,7 +63,7 @@ class PointService(
 
         sagaReplyOutbox.append(
             PointMessageType.POINT_CANCEL,
-            SagaReply.succeeded(PointMessageType.POINT_CANCEL, command.sagaId, command.orderId, UseCancelResult(refundedAmount)),
+            SagaReply.succeeded(PointMessageType.POINT_CANCEL, command.sagaId, command.orderId),
         )
         return refundedAmount
     }
