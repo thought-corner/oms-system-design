@@ -28,7 +28,7 @@ class SagaCommandOutbox(
 ) {
 
     fun appendForward(saga: OrderSaga, order: Order) {
-        val type = SagaCommandType.forwardOf(saga.currentStep)
+        val type = SagaCommandType.forward(saga.currentStep)
         val payload: MessageLite = when (saga.currentStep) {
             SagaStep.STOCK -> StockBuyCommand.newBuilder()
                 .setSagaId(saga.sagaId)
@@ -58,7 +58,7 @@ class SagaCommandOutbox(
 
     fun appendPendingCancels(saga: OrderSaga): List<SagaCommandType> =
         saga.pendingCancels.map { step ->
-            SagaCommandType.cancelOf(step).also { append(it, saga, cancelOf(step, saga)) }
+            SagaCommandType.cancel(step).also { append(it, saga, cancelOf(step, saga)) }
         }
 
     fun awaitingRelay(saga: OrderSaga, forward: Boolean): List<OutboxMessage> {
@@ -69,9 +69,9 @@ class SagaCommandOutbox(
 
     private fun neededCommands(saga: OrderSaga, forward: Boolean): Set<String> =
         when {
-            !forward -> saga.pendingCancels.map { SagaCommandType.cancelOf(it).name }.toSet()
+            !forward -> saga.pendingCancels.map { SagaCommandType.cancel(it).name }.toSet()
             saga.paymentDone -> emptySet()
-            else -> setOf(SagaCommandType.forwardOf(saga.currentStep).name)
+            else -> setOf(SagaCommandType.forward(saga.currentStep).name)
         }
 
     private fun cancelOf(step: SagaStep, saga: OrderSaga): MessageLite =

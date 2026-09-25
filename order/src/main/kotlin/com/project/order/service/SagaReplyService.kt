@@ -74,9 +74,8 @@ class SagaReplyService(
             return ignore(reply, "late forward rejected by participant guard")
         }
 
-        val failure = SagaFailureTranslator.translate(reply.step, reply.code)
-
         if (saga.canFailAt(reply.step) && sagaProgress.accepts(saga, SagaEvent.PROCEED)) {
+            val failure = SagaFailureTranslator.translate(reply.step, reply.code)
             sagaCompensation.begin(saga, failure.errorCode.code, failure.unknownCodeError)
             return applied(reply)
         }
