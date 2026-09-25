@@ -2,18 +2,10 @@ package com.project.common.architecture
 
 import com.tngtech.archunit.core.importer.ClassFileImporter
 import com.tngtech.archunit.core.importer.ImportOption
-import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes
-import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 import com.tngtech.archunit.library.Architectures.layeredArchitecture
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices
 import io.kotest.core.spec.style.BehaviorSpec
-import jakarta.persistence.Entity
-import org.springframework.data.jpa.repository.Lock
-import org.springframework.http.HttpStatus
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -54,80 +46,46 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
         }
 
         Then("원격 호출은 client 밖에서 하지 않는다 (config는 배선만 한다)") {
-            noClasses().that().resideOutsideOfPackage("..client..")
-                .and().resideOutsideOfPackage("..config..")
-                .should().dependOnClassesThat().resideInAPackage("org.springframework.web.client..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.httpClientOnlyInClient.check(classes)
         }
 
         Then("메시지 발행(KafkaTemplate·프로듀서)은 client 밖에서 하지 않는다 (config는 배선만 한다)") {
-            noClasses().that().resideOutsideOfPackage("..client..")
-                .and().resideOutsideOfPackage("..config..")
-                .should().dependOnClassesThat().resideInAPackage(KAFKA_CORE_PACKAGE)
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.kafkaPublishingOnlyInClient.check(classes)
         }
     }
 
     Given("$basePackage — 어노테이션이 있어야 할 자리") {
 
         Then("`@Lock`은 repository 에만 붙는다") {
-            methods().that().areAnnotatedWith(Lock::class.java)
-                .should().beDeclaredInClassesThat().resideInAPackage("..repository..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.lockOnlyInRepository.check(classes)
         }
 
         Then("`@Transactional`은 service 에만 붙는다") {
-            methods().that().areAnnotatedWith(Transactional::class.java)
-                .or().areAnnotatedWith(JAKARTA_TRANSACTIONAL)
-                .should().beDeclaredInClassesThat().resideInAPackage("..service..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.transactionalMethodsOnlyInService.check(classes)
         }
 
         Then("클래스 레벨 `@Transactional`도 service 에만 붙는다") {
-            classes().that().areAnnotatedWith(Transactional::class.java)
-                .or().areAnnotatedWith(JAKARTA_TRANSACTIONAL)
-                .should().resideInAPackage("..service..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.transactionalClassesOnlyInService.check(classes)
         }
 
         Then("`@Entity`는 domain 에만 붙는다") {
-            classes().that().areAnnotatedWith(Entity::class.java)
-                .should().resideInAPackage("..domain..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.entityOnlyInDomain.check(classes)
         }
 
         Then("`@Service`는 service 에만 붙는다") {
-            classes().that().areAnnotatedWith(Service::class.java)
-                .should().resideInAPackage("..service..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.serviceOnlyInService.check(classes)
         }
 
         Then("`@RestController`는 controller 에만 붙는다") {
-            classes().that().areAnnotatedWith(RestController::class.java)
-                .should().resideInAPackage("..controller..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.restControllerOnlyInController.check(classes)
         }
 
         Then("`@KafkaListener`는 messaging 에만 붙는다") {
-            methods().that().areAnnotatedWith(KAFKA_LISTENER)
-                .should().beDeclaredInClassesThat().resideInAPackage("..messaging..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.kafkaListenerMethodsOnlyInMessaging.check(classes)
         }
 
         Then("클래스 레벨 `@KafkaListener`도 messaging 에만 붙는다") {
-            classes().that().areAnnotatedWith(KAFKA_LISTENER)
-                .should().resideInAPackage("..messaging..")
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.kafkaListenerClassesOnlyInMessaging.check(classes)
         }
     }
 
@@ -142,10 +100,7 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
         }
 
         Then("HttpStatus는 exception 밖에서 쓰지 않는다") {
-            noClasses().that().resideOutsideOfPackage("..exception..")
-                .should().dependOnClassesThat().belongToAnyOf(HttpStatus::class.java)
-                .allowEmptyShould(true)
-                .check(classes)
+            LayeredArchitectureRules.httpStatusOnlyInException.check(classes)
         }
 
         Then("LocalDateTime.now()를 직접 부르지 않는다 (시각은 Clock 빈에서)") {
@@ -167,7 +122,3 @@ abstract class LayeredArchitectureSpec(basePackage: String) : BehaviorSpec({
         }
     }
 })
-
-private const val JAKARTA_TRANSACTIONAL = "jakarta.transaction.Transactional"
-private const val KAFKA_LISTENER = "org.springframework.kafka.annotation.KafkaListener"
-private const val KAFKA_CORE_PACKAGE = "org.springframework.kafka.core.."

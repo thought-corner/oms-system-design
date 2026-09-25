@@ -31,10 +31,10 @@ dependencies {
     testFixturesApi(libs.archunit)
     testFixturesApi(libs.kotest.runner.junit5)
     testFixturesApi(libs.kotest.assertions.core)
-    testFixturesCompileOnly(libs.spring.boot.starter.webmvc)
-    testFixturesCompileOnly(libs.spring.boot.starter.data.jpa)
 
     testImplementation(libs.spring.boot.starter.webmvc)
+    testImplementation(libs.spring.boot.starter.data.jpa)
+    testImplementation(libs.spring.boot.starter.kafka)
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.kotest.runner.junit5)
     testImplementation(libs.kotest.assertions.core)

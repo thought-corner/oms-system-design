@@ -4,7 +4,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 import org.springframework.scheduling.annotation.EnableScheduling
 
-@SpringBootApplication(scanBasePackages = ["com.project.operation", "com.project.common"])
+@SpringBootApplication
 @EnableScheduling
 class OperationBatchApplication
 

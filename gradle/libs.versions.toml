@@ -10,7 +10,7 @@ jacoco = "0.8.13"
 protobuf = "4.35.1"
 protobuf-plugin = "0.10.0"
 
-[libraries]ㅈ
+[libraries]
 spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
 spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
