@@ -3,6 +3,7 @@ package com.project.payment.service
 import com.project.payment.DbTag
 import com.project.payment.domain.PaymentStatus
 import com.project.payment.fixture.PaymentFixture
+import com.project.payment.fixture.newTransaction
 import com.project.payment.repository.OutboxMessageRepository
 import com.project.payment.repository.PaymentRepository
 import com.project.payment.repository.SagaGuardRepository
@@ -19,8 +20,6 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.transaction.PlatformTransactionManager
-import org.springframework.transaction.TransactionDefinition
-import org.springframework.transaction.support.TransactionTemplate
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -48,11 +47,6 @@ class PaymentServiceConcurrencyTest : BehaviorSpec() {
     @Autowired
     lateinit var transactionManager: PlatformTransactionManager
 
-    private fun newTransaction(): TransactionTemplate =
-        TransactionTemplate(transactionManager).apply {
-            propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
-        }
-
     init {
         extensions(SpringExtension(SpringTestLifecycleMode.Root))
         tags(DbTag)
@@ -74,14 +68,14 @@ class PaymentServiceConcurrencyTest : BehaviorSpec() {
             When("같은 사가의 보상이 도착하면") {
                 val result = try {
                     val payer = executor.submit {
-                        newTransaction().execute {
+                        transactionManager.newTransaction().execute {
                             service.pay(PayCommand(sagaId, orderId, PaymentFixture.DEFAULT_USER_ID, PaymentFixture.DEFAULT_AMOUNT))
                             locked.countDown()
                             release.await(10, TimeUnit.SECONDS)
                         }
                     }
                     locked.await(10, TimeUnit.SECONDS) shouldBe true
-                    val canceller = executor.submit { newTransaction().execute { service.cancel(PayCancelCommand(sagaId, orderId)) } }
+                    val canceller = executor.submit { transactionManager.newTransaction().execute { service.cancel(PayCancelCommand(sagaId, orderId)) } }
                     val waited = try {
                         Thread.sleep(500)
                         !canceller.isDone
@@ -90,15 +84,15 @@ class PaymentServiceConcurrencyTest : BehaviorSpec() {
                     }
                     payer.get(10, TimeUnit.SECONDS)
                     canceller.get(10, TimeUnit.SECONDS)
-                    val payment = newTransaction().execute { paymentRepository.findBySagaId(sagaId) }
-                    val replyTypes = newTransaction().execute { outboxMessageRepository.findAllBySagaId(sagaId).map { it.messageType } }
+                    val payment = transactionManager.newTransaction().execute { paymentRepository.findBySagaId(sagaId) }
+                    val replyTypes = transactionManager.newTransaction().execute { outboxMessageRepository.findAll().filter { it.sagaId == sagaId }.map { it.messageType } }
                     PayCancelRace(waited, payment?.status, payment?.paidOrderId, replyTypes.orEmpty())
                 } finally {
                     executor.shutdownNow()
-                    newTransaction().execute {
+                    transactionManager.newTransaction().execute {
                         paymentRepository.findBySagaId(sagaId)?.let { paymentRepository.delete(it) }
                         guardRepository.deleteById(sagaId)
-                        outboxMessageRepository.deleteAll(outboxMessageRepository.findAllBySagaId(sagaId))
+                        outboxMessageRepository.deleteAll(outboxMessageRepository.findAll().filter { it.sagaId == sagaId })
                     }
                 }
 

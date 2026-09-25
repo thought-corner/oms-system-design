@@ -8,12 +8,3 @@ enum class PaymentMessageType(val direction: ReplyDirection) {
 enum class ReplyDirection {
     FORWARD, CANCEL
 }
-
-data class DeadLetter(
-    val topic: String,
-    val orderId: String?,
-    val sagaId: String?,
-    val messageType: String?,
-    val exceptionClass: String?,
-    val exceptionMessage: String?,
-)

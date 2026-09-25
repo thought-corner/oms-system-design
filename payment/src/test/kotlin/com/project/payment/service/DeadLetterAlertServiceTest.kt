@@ -4,7 +4,7 @@ import com.project.common.exception.CommonErrorCode
 import com.project.payment.client.AlertSender
 import com.project.payment.client.DeadLetterAlert
 import com.project.payment.client.DeadLetterKind
-import com.project.payment.service.dto.DeadLetter
+import com.project.payment.service.dto.DeadLetterCommand
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
@@ -24,7 +24,7 @@ private fun deadLetter(
     orderId: String? = "10",
     sagaId: String? = SAGA_ID,
     exceptionClass: String? = PARSE_FAILURE,
-) = DeadLetter("cmd.payment-dlt", orderId, sagaId, messageType, exceptionClass, "broken")
+) = DeadLetterCommand("cmd.payment-dlt", orderId, sagaId, messageType, exceptionClass, "broken")
 
 private fun alertOf(alertSender: AlertSender): DeadLetterAlert {
     val alert = slot<DeadLetterAlert>()

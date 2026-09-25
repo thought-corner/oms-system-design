@@ -5,12 +5,6 @@ import java.time.Duration
 
 object CommandRetryPolicy {
 
-    const val COMMAND_TOPIC: String = "cmd.payment"
-    const val RETRY_TOPIC_SUFFIX: String = "-retry"
-    const val DLT_SUFFIX: String = "-dlt"
-    const val DLT_HANDLER_BEAN: String = "paymentCommandConsumer"
-    const val DLT_HANDLER_METHOD: String = "onDeadLetter"
-
     val BLOCKING_INITIAL_INTERVAL: Duration = Duration.ofSeconds(1)
     const val BLOCKING_MULTIPLIER: Double = 2.0
     const val BLOCKING_RETRIES: Long = 3L

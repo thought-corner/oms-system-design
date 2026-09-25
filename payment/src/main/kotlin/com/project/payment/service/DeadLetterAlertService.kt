@@ -5,7 +5,7 @@ import com.project.payment.client.AlertSender
 import com.project.payment.client.DeadLetterAlert
 import com.project.payment.client.DeadLetterKind
 import com.project.payment.exception.NonRetryableExceptions
-import com.project.payment.service.dto.DeadLetter
+import com.project.payment.service.dto.DeadLetterCommand
 import com.project.payment.service.dto.PaymentMessageType
 import com.project.payment.service.dto.ReplyDirection
 import org.slf4j.LoggerFactory
@@ -20,7 +20,7 @@ class DeadLetterAlertService(
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    fun handle(deadLetter: DeadLetter) {
+    fun handle(deadLetter: DeadLetterCommand) {
         val kind = kindOf(deadLetter)
         val failedReplyWritten = kind == DeadLetterKind.POISON && recordForwardFailure(deadLetter)
         alertSender.send(
@@ -37,10 +37,10 @@ class DeadLetterAlertService(
         )
     }
 
-    private fun kindOf(deadLetter: DeadLetter): DeadLetterKind =
+    private fun kindOf(deadLetter: DeadLetterCommand): DeadLetterKind =
         if (NonRetryableExceptions.includes(deadLetter.exceptionClass)) DeadLetterKind.POISON else DeadLetterKind.RETRY_EXHAUSTED
 
-    private fun recordForwardFailure(deadLetter: DeadLetter): Boolean {
+    private fun recordForwardFailure(deadLetter: DeadLetterCommand): Boolean {
         PaymentMessageType.entries.firstOrNull { it.name == deadLetter.messageType }
             ?.takeIf { it.direction == ReplyDirection.FORWARD }
             ?: return false

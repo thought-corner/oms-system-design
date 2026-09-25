@@ -7,7 +7,7 @@ import com.project.payment.messaging.dto.toCommand
 import com.project.payment.service.DeadLetterAlertService
 import com.project.payment.service.MessageContract
 import com.project.payment.service.PaymentService
-import com.project.payment.service.dto.DeadLetter
+import com.project.payment.service.dto.DeadLetterCommand
 import com.project.payment.service.dto.PayCommand
 import com.project.payment.service.dto.PaymentMessageType
 import org.apache.kafka.clients.consumer.ConsumerRecord
@@ -31,7 +31,7 @@ class PaymentCommandConsumer(
 
     fun onDeadLetter(record: ConsumerRecord<String, ByteArray>) {
         deadLetterAlertService.handle(
-            DeadLetter(
+            DeadLetterCommand(
                 topic = record.header(KafkaHeaders.ORIGINAL_TOPIC) ?: record.topic(),
                 orderId = record.key(),
                 sagaId = record.header(MessageContract.SAGA_ID_HEADER),
