@@ -73,7 +73,7 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
         )
 
     private fun replyOf(sagaId: String, messageType: String): OutboxMessage? =
-        outboxMessageRepository.findAllBySagaId(sagaId).singleOrNull { it.messageType == messageType }
+        outboxMessageRepository.findAll().filter { it.sagaId == sagaId }.singleOrNull { it.messageType == messageType }
 
     private fun OutboxMessage.body(): SagaReply = SagaReply.parseFrom(payload)
 
@@ -173,7 +173,7 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
                             )
                         }
                     }
-                    val reply = outboxMessageRepository.findAllBySagaId(sagaId).single()
+                    val reply = outboxMessageRepository.findAll().filter { it.sagaId == sagaId }.single()
                     reply.topic shouldBe "saga.replies"
                     reply.messageKey shouldBe "502"
                     reply.messageType shouldBe "PAYMENT_PAY"

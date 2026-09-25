@@ -8,10 +8,8 @@ import com.project.payment.exception.PaymentErrorCode
 import com.project.payment.fixture.PaymentFixture
 import com.project.payment.service.DeadLetterAlertService
 import com.project.payment.service.PaymentService
-import com.project.payment.service.dto.DeadLetter
+import com.project.payment.service.dto.DeadLetterCommand
 import com.project.payment.service.dto.PayCancelCommand
-import com.project.payment.service.dto.PayCommand
-import com.project.payment.service.dto.PayResult
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
@@ -27,11 +25,21 @@ import org.apache.kafka.common.header.internals.RecordHeader
 import org.springframework.dao.QueryTimeoutException
 
 private val PAY_BYTES: ByteArray =
-    PaymentPayCommand.newBuilder().setSagaId("saga-1").setOrderId(1L).setUserId(1L).setAmount(400L).build().toByteArray()
+    PaymentPayCommand.newBuilder()
+        .setSagaId(PaymentFixture.DEFAULT_SAGA_ID)
+        .setOrderId(PaymentFixture.DEFAULT_ORDER_ID)
+        .setUserId(PaymentFixture.DEFAULT_USER_ID)
+        .setAmount(PaymentFixture.DEFAULT_AMOUNT)
+        .build()
+        .toByteArray()
 private val CANCEL_BYTES: ByteArray =
-    PaymentCancelCommand.newBuilder().setSagaId("saga-1").setOrderId(1L).build().toByteArray()
+    PaymentCancelCommand.newBuilder()
+        .setSagaId(PaymentFixture.DEFAULT_SAGA_ID)
+        .setOrderId(PaymentFixture.DEFAULT_ORDER_ID)
+        .build()
+        .toByteArray()
 private val BROKEN_BYTES: ByteArray = byteArrayOf(0x0A, 0x7F, 0x01)
-private val PAY_COMMAND = PayCommand(sagaId = "saga-1", orderId = 1L, userId = 1L, amount = 400L)
+private val PAY_COMMAND = PaymentFixture.payCommand()
 
 private fun record(
     messageType: String?,
@@ -167,7 +175,7 @@ class PaymentCommandConsumerTest : BehaviorSpec({
 
     Given("결제된 주문의 PAYMENT_PAY 커맨드") {
         val paymentService = mockk<PaymentService>()
-        every { paymentService.pay(PAY_COMMAND) } returns PayResult(1L, PaymentFixture.FIXED_PAID_AT)
+        every { paymentService.pay(PAY_COMMAND) } just Runs
 
         When("소비하면") {
             consumer(paymentService).onCommand(record("PAYMENT_PAY", PAY_BYTES))
@@ -212,7 +220,7 @@ class PaymentCommandConsumerTest : BehaviorSpec({
             Then("토픽·orderId·sagaId·messageType·예외를 담아 운영자 알림을 보낸다") {
                 verify(exactly = 1) {
                     deadLetterAlertService.handle(
-                        DeadLetter(
+                        DeadLetterCommand(
                             topic = "cmd.payment",
                             orderId = "1",
                             sagaId = "saga-1",

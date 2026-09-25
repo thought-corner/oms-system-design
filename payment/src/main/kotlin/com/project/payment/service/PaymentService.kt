@@ -8,7 +8,6 @@ import com.project.payment.exception.PaymentErrorCode
 import com.project.payment.repository.PaymentRepository
 import com.project.payment.service.dto.PayCancelCommand
 import com.project.payment.service.dto.PayCommand
-import com.project.payment.service.dto.PayResult
 import com.project.payment.service.dto.PaymentMessageType
 import com.project.payment.statemachine.PaymentStateMachine
 import org.slf4j.LoggerFactory
@@ -32,39 +31,18 @@ class PaymentService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     @Transactional
-    fun pay(command: PayCommand): PayResult {
+    fun pay(command: PayCommand) {
         sagaGuardLock.lockForward(command.sagaId)
         val previousPayment = paymentRepository.findBySagaId(command.sagaId)
         if (previousPayment?.isCanceled() == true) {
             throw BusinessException(PaymentErrorCode.SAGA_ALREADY_COMPENSATED, "sagaId=${command.sagaId}")
         }
 
-        previousPayment?.let { return repliedPay(command, PayResult.from(it)) }
-
-        paymentRepository.findByPaidOrderId(command.orderId)?.let {
-            throw BusinessException(PaymentErrorCode.ALREADY_PAID, "orderId=${command.orderId}")
+        if (previousPayment == null) {
+            approve(command)
         }
 
-        simulateExternalPaymentGatewayLatency()
-
-        val approvedPayment = try {
-            paymentRepository.save(
-                Payment(
-                    sagaId = command.sagaId,
-                    orderId = command.orderId,
-                    userId = command.userId,
-                    amount = command.amount,
-                    paidAt = LocalDateTime.now(clock),
-                ),
-            )
-        } catch (e: DataIntegrityViolationException) {
-            if (isOrderAlreadyPaid(e)) {
-                throw BusinessException(PaymentErrorCode.ALREADY_PAID, "orderId=${command.orderId}")
-            }
-            throw e
-        }
-
-        return repliedPay(command, PayResult.from(approvedPayment))
+        sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_PAY, command.sagaId, command.orderId)
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -88,17 +66,37 @@ class PaymentService(
         sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_CANCEL, command.sagaId, command.orderId)
     }
 
+    private fun approve(command: PayCommand) {
+        paymentRepository.findByPaidOrderId(command.orderId)?.let {
+            throw BusinessException(PaymentErrorCode.ALREADY_PAID, "orderId=${command.orderId}")
+        }
+
+        simulateExternalPaymentGatewayLatency()
+
+        try {
+            paymentRepository.save(
+                Payment(
+                    sagaId = command.sagaId,
+                    orderId = command.orderId,
+                    userId = command.userId,
+                    amount = command.amount,
+                    paidAt = LocalDateTime.now(clock),
+                ),
+            )
+        } catch (e: DataIntegrityViolationException) {
+            if (isOrderAlreadyPaid(e)) {
+                throw BusinessException(PaymentErrorCode.ALREADY_PAID, "orderId=${command.orderId}")
+            }
+            throw e
+        }
+    }
+
     private fun cancelPaid(payment: Payment) {
         val paymentId = requireNotNull(payment.id)
         val currentStatus = payment.status
         val nextStatus = paymentStateMachine.transition(paymentId, currentStatus, PaymentEvent.CANCEL)
         payment.transitionTo(nextStatus)
         log.info("Payment state transition applied: paymentId={}, {} -> {}", paymentId, currentStatus, nextStatus)
-    }
-
-    private fun repliedPay(command: PayCommand, result: PayResult): PayResult {
-        sagaReplyOutbox.succeeded(PaymentMessageType.PAYMENT_PAY, command.sagaId, command.orderId)
-        return result
     }
 
     private fun isOrderAlreadyPaid(e: DataIntegrityViolationException): Boolean =

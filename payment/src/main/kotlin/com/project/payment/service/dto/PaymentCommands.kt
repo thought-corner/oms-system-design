@@ -1,8 +1,5 @@
 package com.project.payment.service.dto
 
-import com.project.payment.domain.Payment
-import java.time.LocalDateTime
-
 data class PayCommand(
     val sagaId: String,
     val orderId: Long,
@@ -10,18 +7,16 @@ data class PayCommand(
     val amount: Long,
 )
 
-data class PayResult(
-    val paymentId: Long,
-    val paidAt: LocalDateTime,
-) {
-
-    companion object {
-        fun from(payment: Payment): PayResult =
-            PayResult(paymentId = requireNotNull(payment.id), paidAt = payment.paidAt)
-    }
-}
-
 data class PayCancelCommand(
     val sagaId: String,
     val orderId: Long,
+)
+
+data class DeadLetterCommand(
+    val topic: String,
+    val orderId: String?,
+    val sagaId: String?,
+    val messageType: String?,
+    val exceptionClass: String?,
+    val exceptionMessage: String?,
 )

@@ -67,7 +67,7 @@ class SagaReplyOutboxTest : BehaviorSpec({
                 reply.outcome shouldBe SagaOutcome.SAGA_OUTCOME_SUCCEEDED
                 reply.hasCode() shouldBe false
                 reply.hasTotalPrice() shouldBe false
-                saved.captured.occurredAt shouldBe PaymentFixture.FIXED_PAID_AT
+                saved.captured.occurredAt shouldBe PaymentFixture.FIXED_NOW
                 UUID.fromString(saved.captured.messageId).toString() shouldBe saved.captured.messageId
                 saved.captured.status shouldBe OutboxStatus.PENDING
                 saved.captured.failCount shouldBe 0
