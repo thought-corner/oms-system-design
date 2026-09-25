@@ -32,7 +32,7 @@ private val CANCEL_BYTES: ByteArray = PointCancelCommand.newBuilder().setSagaId(
 private val USE_COMMAND = UseCommand(sagaId = "saga-1", orderId = 10L, userId = 1L, amount = 400L)
 
 private fun record(value: ByteArray, messageType: String?): ConsumerRecord<String, ByteArray> =
-    ConsumerRecord("cmd.point", 0, 0L, "10", value).also { record ->
+    ConsumerRecord("point.command", 0, 0L, "10", value).also { record ->
         record.headers().add(MessageContract.SAGA_ID_HEADER, "saga-1".toByteArray())
         messageType?.let { record.headers().add(MessageContract.MESSAGE_TYPE_HEADER, it.toByteArray()) }
     }
@@ -196,10 +196,10 @@ class PointCommandConsumerTest : BehaviorSpec({
         val deadLetterAlertService = mockk<DeadLetterAlertService>()
         val reported = slot<DeadLetterCommand>()
         every { deadLetterAlertService.handle(capture(reported)) } just Runs
-        val record = ConsumerRecord("cmd.point-dlt", 1, 5L, "10", byteArrayOf()).also {
+        val record = ConsumerRecord("point.command.dlt", 1, 5L, "10", byteArrayOf()).also {
             it.headers().add(MessageContract.SAGA_ID_HEADER, "saga-1".toByteArray())
             it.headers().add(MessageContract.MESSAGE_TYPE_HEADER, "POINT_USE".toByteArray())
-            it.headers().add(KafkaHeaders.ORIGINAL_TOPIC, "cmd.point".toByteArray())
+            it.headers().add(KafkaHeaders.ORIGINAL_TOPIC, "point.command".toByteArray())
             it.headers().add(KafkaHeaders.EXCEPTION_FQCN, "org.springframework.kafka.listener.ListenerExecutionFailedException".toByteArray())
             it.headers().add(KafkaHeaders.EXCEPTION_CAUSE_FQCN, "java.lang.IllegalStateException".toByteArray())
             it.headers().add(KafkaHeaders.EXCEPTION_MESSAGE, "db down".toByteArray())
@@ -210,7 +210,7 @@ class PointCommandConsumerTest : BehaviorSpec({
 
             Then("원래 토픽과 키·헤더의 orderId·sagaId·messageType·원인 예외를 보고한다") {
                 reported.captured shouldBe DeadLetterCommand(
-                    topic = "cmd.point",
+                    topic = "point.command",
                     orderId = "10",
                     sagaId = "saga-1",
                     messageType = "POINT_USE",
@@ -225,7 +225,7 @@ class PointCommandConsumerTest : BehaviorSpec({
         val deadLetterAlertService = mockk<DeadLetterAlertService>()
         val reported = slot<DeadLetterCommand>()
         every { deadLetterAlertService.handle(capture(reported)) } just Runs
-        val record = ConsumerRecord("cmd.point-dlt", 0, 0L, "10", byteArrayOf(0x0a)).also {
+        val record = ConsumerRecord("point.command.dlt", 0, 0L, "10", byteArrayOf(0x0a)).also {
             it.headers().add(KafkaHeaders.EXCEPTION_FQCN, "com.google.protobuf.InvalidProtocolBufferException".toByteArray())
         }
 
@@ -233,7 +233,7 @@ class PointCommandConsumerTest : BehaviorSpec({
             PointCommandConsumer(mockk(), deadLetterAlertService).onDeadLetter(record)
 
             Then("레코드 토픽과 예외 클래스 헤더로 대신하고 없는 헤더는 null 로 보고한다") {
-                reported.captured.topic shouldBe "cmd.point-dlt"
+                reported.captured.topic shouldBe "point.command.dlt"
                 reported.captured.exceptionClass shouldBe "com.google.protobuf.InvalidProtocolBufferException"
                 reported.captured.sagaId shouldBe null
                 reported.captured.messageType shouldBe null

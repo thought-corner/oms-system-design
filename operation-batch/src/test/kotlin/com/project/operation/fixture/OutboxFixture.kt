@@ -11,7 +11,7 @@ object OutboxFixture {
     val FIXED_TIME: LocalDateTime = LocalDateTime.of(2026, 9, 25, 10, 0)
     val FIXED_CLOCK: Clock = Clock.fixed(FIXED_TIME.atZone(ZONE).toInstant(), ZONE)
 
-    fun message(id: Long, topic: String = "cmd.product"): OutboxMessage = OutboxMessage(
+    fun message(id: Long, topic: String = "product.command"): OutboxMessage = OutboxMessage(
         id = id,
         messageId = "message-$id",
         topic = topic,

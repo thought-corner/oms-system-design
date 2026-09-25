@@ -61,10 +61,10 @@ services:
     command:
       - |
         set -e
-        for spec in cmd.product:3 cmd.point:3 cmd.payment:12 saga.replies:3; do
+        for spec in product.command:3 point.command:3 payment.command:12 order.reply:3; do
           topic=$${spec%%:*}
           partitions=$${spec##*:}
-          for name in "$$topic" "$$topic-retry-0" "$$topic-retry-1" "$$topic-retry-2" "$$topic-dlt"; do
+          for name in "$$topic" "$$topic.retry-0" "$$topic.retry-1" "$$topic.retry-2" "$$topic.dlt"; do
             /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$name" --partitions "$$partitions" --replication-factor 1
           done
         done

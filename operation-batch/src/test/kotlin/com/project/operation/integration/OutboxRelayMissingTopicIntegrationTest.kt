@@ -55,6 +55,6 @@ class OutboxRelayMissingTopicIntegrationTest : BehaviorSpec() {
     }
 
     companion object {
-        private const val MISSING_TOPIC = "cmd.missing"
+        private const val MISSING_TOPIC = "missing.command"
     }
 }

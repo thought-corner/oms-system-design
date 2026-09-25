@@ -35,8 +35,8 @@ class SagaReplyWriterTest : BehaviorSpec({
             writer.succeeded(ProductCommandType.STOCK_BUY, "saga-1", 10L, 600L)
             val payload = SagaReply.parseFrom(saved.captured.payload)
 
-            Then("saga.replies 로 가는 outbox 행을 키 orderId, 헤더 sagaId·커맨드 messageType 으로 넣는다") {
-                saved.captured.topic shouldBe "saga.replies"
+            Then("order.reply 로 가는 outbox 행을 키 orderId, 헤더 sagaId·커맨드 messageType 으로 넣는다") {
+                saved.captured.topic shouldBe "order.reply"
                 saved.captured.messageKey shouldBe "10"
                 saved.captured.sagaId shouldBe "saga-1"
                 saved.captured.messageType shouldBe "STOCK_BUY"

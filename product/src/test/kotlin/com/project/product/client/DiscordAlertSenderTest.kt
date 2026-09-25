@@ -18,12 +18,12 @@ private const val INCIDENT_URL = "https://discord.test/api/webhooks/2/incident"
 private const val DEFECT_URL = "https://discord.test/api/webhooks/3/defect"
 
 private val POISON_REPLIED_ALERT =
-    DeadLetterAlert("cmd.product", "10", "saga-1", "STOCK_BUY", "tools.jackson.core.JacksonException", "broken", DeadLetterKind.POISON, true)
+    DeadLetterAlert("product.command", "10", "saga-1", "STOCK_BUY", "tools.jackson.core.JacksonException", "broken", DeadLetterKind.POISON, true)
 
 private val POISON_UNREPLIED_ALERT = POISON_REPLIED_ALERT.copy(messageType = "STOCK_CANCEL", failedReplyWritten = false)
 
 private val RETRY_EXHAUSTED_ALERT =
-    DeadLetterAlert("cmd.product", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalStateException", "db down", DeadLetterKind.RETRY_EXHAUSTED, false)
+    DeadLetterAlert("product.command", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalStateException", "db down", DeadLetterKind.RETRY_EXHAUSTED, false)
 
 class DiscordAlertSenderTest : BehaviorSpec({
 

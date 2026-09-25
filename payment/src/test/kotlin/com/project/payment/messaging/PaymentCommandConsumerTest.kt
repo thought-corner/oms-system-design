@@ -44,7 +44,7 @@ private val PAY_COMMAND = PaymentFixture.payCommand()
 private fun record(
     messageType: String?,
     value: ByteArray,
-    topic: String = "cmd.payment",
+    topic: String = "payment.command",
     headers: Map<String, String> = emptyMap(),
 ): ConsumerRecord<String, ByteArray> =
     ConsumerRecord(topic, 0, 0L, "1", value).also { record ->
@@ -206,9 +206,9 @@ class PaymentCommandConsumerTest : BehaviorSpec({
         val dltRecord = record(
             "PAYMENT_PAY",
             PAY_BYTES,
-            topic = "cmd.payment-dlt",
+            topic = "payment.command.dlt",
             headers = mapOf(
-                "kafka_original-topic" to "cmd.payment",
+                "kafka_original-topic" to "payment.command",
                 "kafka_exception-cause-fqcn" to "org.springframework.dao.QueryTimeoutException",
                 "kafka_exception-message" to "lock wait",
             ),
@@ -221,7 +221,7 @@ class PaymentCommandConsumerTest : BehaviorSpec({
                 verify(exactly = 1) {
                     deadLetterAlertService.handle(
                         DeadLetterCommand(
-                            topic = "cmd.payment",
+                            topic = "payment.command",
                             orderId = "1",
                             sagaId = "saga-1",
                             messageType = "PAYMENT_PAY",
@@ -240,7 +240,7 @@ class PaymentCommandConsumerTest : BehaviorSpec({
         val dltRecord = record(
             "PAYMENT_PAY",
             BROKEN_BYTES,
-            topic = "cmd.payment-dlt",
+            topic = "payment.command.dlt",
             headers = mapOf("kafka_exception-fqcn" to "org.springframework.kafka.listener.ListenerExecutionFailedException"),
         )
 
@@ -251,7 +251,7 @@ class PaymentCommandConsumerTest : BehaviorSpec({
                 verify(exactly = 1) {
                     deadLetterAlertService.handle(
                         match {
-                            it.topic == "cmd.payment-dlt" &&
+                            it.topic == "payment.command.dlt" &&
                                 it.exceptionClass == "org.springframework.kafka.listener.ListenerExecutionFailedException" &&
                                 it.exceptionMessage == null
                         },

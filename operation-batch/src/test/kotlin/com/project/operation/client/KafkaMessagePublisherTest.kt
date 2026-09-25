@@ -43,12 +43,12 @@ class KafkaMessagePublisherTest : BehaviorSpec({
         val template = mockk<KafkaTemplate<String, ByteArray>>()
         every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "no.such.topic" }) } throws
             KafkaException("Send failed", TimeoutException("Topic no.such.topic not present in metadata"))
-        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "cmd.product" }) } returns acked()
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "product.command" }) } returns acked()
         val publisher = KafkaMessagePublisher(template)
 
         When("한 배치로 보내면") {
             val outcomes = publisher.publishAll(
-                listOf(message("no.such.topic"), message("no.such.topic"), message("cmd.product")),
+                listOf(message("no.such.topic"), message("no.such.topic"), message("product.command")),
                 Duration.ofSeconds(5),
             )
 
@@ -72,7 +72,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
 
         When("같은 토픽의 두 행을 보내면") {
             val outcomes = publisher.publishAll(
-                listOf(message("cmd.point", key = "10"), message("cmd.point", key = "11")),
+                listOf(message("point.command", key = "10"), message("point.command", key = "11")),
                 Duration.ofSeconds(1),
             )
 
@@ -90,7 +90,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
         val publisher = KafkaMessagePublisher(template)
 
         When("보내면") {
-            val outcome = publisher.publishAll(listOf(message("cmd.point")), Duration.ofSeconds(1)).single()
+            val outcome = publisher.publishAll(listOf(message("point.command")), Duration.ofSeconds(1)).single()
 
             Then("Kafka 가 재시도 가능하다고 하지 않은 실패라 영구 실패로 돌려주고 예외를 올리지 않는다") {
                 outcome.unpublished().kind shouldBe UnpublishedKind.PERMANENT_FAILURE
@@ -108,7 +108,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
         val publisher = KafkaMessagePublisher(template)
 
         When("배치 마감 50ms 로 보내면") {
-            val outcomes = publisher.publishAll(listOf(message("cmd.payment"), message("cmd.payment", key = "11")), Duration.ofMillis(50))
+            val outcomes = publisher.publishAll(listOf(message("payment.command"), message("payment.command", key = "11")), Duration.ofMillis(50))
 
             Then("첫 행은 확인 시간 초과로 재시도 가능한 실패, 마감 뒤의 행은 보내지도 않는다") {
                 outcomes shouldContainExactly listOf(
@@ -130,7 +130,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             publisher.publishAll(
                 listOf(
                     OutgoingMessage(
-                        topic = "saga.replies",
+                        topic = "order.reply",
                         key = "10",
                         payload = byteArrayOf(0x0A, 0x02),
                         headers = mapOf("messageId" to "message-1", "sagaId" to "saga-1", "messageType" to "STOCK_BUY"),
@@ -159,7 +159,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
         val publisher = KafkaMessagePublisher(template)
 
         When("보내면") {
-            val outcome = publisher.publishAll(listOf(message("saga.replies")), Duration.ofSeconds(5)).single()
+            val outcome = publisher.publishAll(listOf(message("order.reply")), Duration.ofSeconds(5)).single()
 
             Then("전달 시간 초과는 재시도 가능한 실패로 원인과 함께 돌려준다") {
                 outcome.unpublished().kind shouldBe UnpublishedKind.RETRIABLE_FAILURE
@@ -174,7 +174,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
         val publisher = KafkaMessagePublisher(template)
 
         When("두 토픽으로 보내면") {
-            val outcomes = publisher.publishAll(listOf(message("cmd.product"), message("cmd.point")), Duration.ofSeconds(1))
+            val outcomes = publisher.publishAll(listOf(message("product.command"), message("point.command")), Duration.ofSeconds(1))
 
             Then("둘 다 재시도 가능한 실패다") {
                 outcomes.kinds() shouldContainExactly List(2) { UnpublishedKind.RETRIABLE_FAILURE }
@@ -185,17 +185,17 @@ class KafkaMessagePublisherTest : BehaviorSpec({
 
     Given("행 자체가 받아들여지지 않는 전송 셋") {
         val template = mockk<KafkaTemplate<String, ByteArray>>()
-        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "cmd.product" }) } returns
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "product.command" }) } returns
             failed(RecordTooLargeException("The message is 2000000 bytes"))
         every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "bad topic" }) } returns
             failed(InvalidTopicException("Invalid topics: [bad topic]"))
-        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "cmd.payment" }) } returns
-            failed(TopicAuthorizationException("Not authorized to access topics: [cmd.payment]"))
+        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "payment.command" }) } returns
+            failed(TopicAuthorizationException("Not authorized to access topics: [payment.command]"))
         val publisher = KafkaMessagePublisher(template)
 
         When("보내면") {
             val outcomes = publisher.publishAll(
-                listOf(message("cmd.product"), message("bad topic"), message("cmd.payment")),
+                listOf(message("product.command"), message("bad topic"), message("payment.command")),
                 Duration.ofSeconds(1),
             )
 
@@ -212,7 +212,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
         val publisher = KafkaMessagePublisher(template)
 
         When("보내면") {
-            val outcome = publisher.publishAll(listOf(message("cmd.point")), Duration.ofSeconds(1)).single()
+            val outcome = publisher.publishAll(listOf(message("point.command")), Duration.ofSeconds(1)).single()
 
             Then("영구 실패다") {
                 outcome.unpublished().kind shouldBe UnpublishedKind.PERMANENT_FAILURE
@@ -230,7 +230,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
         val publisher = KafkaMessagePublisher(template)
 
         When("보내면") {
-            val outcome = publisher.publishAll(listOf(message("cmd.point")), Duration.ofSeconds(1)).single()
+            val outcome = publisher.publishAll(listOf(message("point.command")), Duration.ofSeconds(1)).single()
             val interrupted = Thread.interrupted()
 
             Then("재시도 가능한 실패로 돌려주고 인터럽트 표시를 되살린다") {

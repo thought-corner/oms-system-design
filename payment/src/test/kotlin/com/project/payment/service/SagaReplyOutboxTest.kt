@@ -34,8 +34,8 @@ class SagaReplyOutboxTest : BehaviorSpec({
             outbox.failed(PaymentMessageType.PAYMENT_PAY, "saga-f", 10L, PaymentErrorCode.ALREADY_PAID)
             val reply = SagaReply.parseFrom(saved.captured.payload)
 
-            Then("saga.replies 로 가는 FAILED 응답에 참여자 코드가 실리고 total_price 는 비어 있다") {
-                saved.captured.topic shouldBe "saga.replies"
+            Then("order.reply 로 가는 FAILED 응답에 참여자 코드가 실리고 total_price 는 비어 있다") {
+                saved.captured.topic shouldBe "order.reply"
                 saved.captured.messageKey shouldBe "10"
                 saved.captured.sagaId shouldBe "saga-f"
                 saved.captured.messageType shouldBe "PAYMENT_PAY"

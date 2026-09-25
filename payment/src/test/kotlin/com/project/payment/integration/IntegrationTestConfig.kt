@@ -29,10 +29,10 @@ class IntegrationTestConfig {
 
     companion object {
         const val PARTITIONS = 3
-        const val COMMAND_TOPIC = "cmd.payment"
-        const val DLT_TOPIC = "cmd.payment-dlt"
-        const val REPLY_TOPIC = "saga.replies"
-        val RETRY_TOPICS = listOf("cmd.payment-retry-0", "cmd.payment-retry-1", "cmd.payment-retry-2")
+        const val COMMAND_TOPIC = "payment.command"
+        const val DLT_TOPIC = "payment.command.dlt"
+        const val REPLY_TOPIC = "order.reply"
+        val RETRY_TOPICS = listOf("payment.command.retry-0", "payment.command.retry-1", "payment.command.retry-2")
         val COMMAND_TOPICS = listOf(COMMAND_TOPIC) + RETRY_TOPICS + DLT_TOPIC
     }
 }

@@ -47,7 +47,7 @@ class SagaReplyServiceTest : BehaviorSpec({
                 payload.userId shouldBe OrderFixture.DEFAULT_USER_ID
                 payload.sagaId shouldBe OrderFixture.DEFAULT_SAGA_ID
                 payload.orderId shouldBe OrderFixture.DEFAULT_ORDER_ID
-                h.saved.single().topic shouldBe "cmd.point"
+                h.saved.single().topic shouldBe "point.command"
                 h.saved.single().messageKey shouldBe "10"
             }
         }
@@ -80,7 +80,7 @@ class SagaReplyServiceTest : BehaviorSpec({
                 val payload = PaymentPayCommand.parseFrom(h.payloadOf("PAYMENT_PAY"))
                 payload.amount shouldBe 400L
                 payload.userId shouldBe OrderFixture.DEFAULT_USER_ID
-                h.saved.single().topic shouldBe "cmd.payment"
+                h.saved.single().topic shouldBe "payment.command"
             }
         }
     }
@@ -180,7 +180,7 @@ class SagaReplyServiceTest : BehaviorSpec({
                 h.saga.updatedAt shouldBe OrderFixture.FIXED_TIME
                 h.order.status shouldBe OrderStatus.PLACING
                 h.messageTypes shouldContainExactly listOf("PAYMENT_CANCEL", "POINT_CANCEL", "STOCK_CANCEL")
-                h.saved.map { it.topic } shouldContainExactly listOf("cmd.payment", "cmd.point", "cmd.product")
+                h.saved.map { it.topic } shouldContainExactly listOf("payment.command", "point.command", "product.command")
                 val payload = StockCancelCommand.parseFrom(h.payloadOf("STOCK_CANCEL"))
                 payload.sagaId shouldBe OrderFixture.DEFAULT_SAGA_ID
                 payload.orderId shouldBe OrderFixture.DEFAULT_ORDER_ID

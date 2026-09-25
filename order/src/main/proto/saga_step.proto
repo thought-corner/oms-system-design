@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package msa.saga.v1;
+
+option java_multiple_files = true;
+option java_package = "com.project.message.order";
+
+enum SagaStep {
+  SAGA_STEP_UNSPECIFIED = 0;
+  SAGA_STEP_STOCK = 1;
+  SAGA_STEP_POINT = 2;
+  SAGA_STEP_PAYMENT = 3;
+}

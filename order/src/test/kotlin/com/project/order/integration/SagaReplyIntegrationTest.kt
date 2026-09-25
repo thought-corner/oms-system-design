@@ -30,7 +30,7 @@ import org.springframework.kafka.core.KafkaTemplate
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
-@SpringBootTest
+@SpringBootTest(properties = ["spring.kafka.listener.missing-topics-fatal=true"])
 @Import(IntegrationTestConfig::class)
 class SagaReplyIntegrationTest : BehaviorSpec() {
 
@@ -122,14 +122,14 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
             Then("진입 트랜잭션이 PLACING · RUNNING · STOCK_BUY(productId 오름차순) 를 함께 남긴다") {
                 orderStatus(orderId) shouldBe "PLACING"
                 val command = commands(sagaId).single()
-                command["topic"] shouldBe "cmd.product"
+                command["topic"] shouldBe "product.command"
                 command["message_key"] shouldBe orderId.toString()
                 command["message_type"] shouldBe "STOCK_BUY"
                 command["status"] shouldBe "PENDING"
                 StockBuyCommand.parseFrom(payloadOf(command)).itemsList.map { it.productId } shouldContainExactly listOf(1L, 2L)
             }
 
-            When("재고 성공 응답이 saga.replies 에 오면") {
+            When("재고 성공 응답이 order.reply 에 오면") {
                 reply(orderId, sagaId, "STOCK_BUY", forward(orderId, sagaId, SagaStep.SAGA_STEP_STOCK) { setTotalPrice(400L) })
 
                 Then("POINT_USE 400 이 outbox 에 들어간다") {
@@ -210,10 +210,10 @@ class SagaReplyIntegrationTest : BehaviorSpec() {
         Given("모양이 맞지 않는 응답") {
             val sagaId = UUID.randomUUID().toString()
 
-            When("깨진 바이트가 saga.replies 에 오면") {
+            When("깨진 바이트가 order.reply 에 오면") {
                 reply(999L, sagaId, "POINT_USE", byteArrayOf(0x0A, 0x05, 0x73))
 
-                Then("B-12 재시도 없이 saga.replies-dlt 로 가서 운영자 알림이 울린다") {
+                Then("B-12 재시도 없이 order.reply.dlt 로 가서 운영자 알림이 울린다") {
                     eventually(30.seconds) {
                         verify(exactly = 1) {
                             alertSender.send(

@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package msa.saga.v1;
+
+option java_multiple_files = true;
+option java_package = "com.project.message.order";
+
+enum SagaDirection {
+  SAGA_DIRECTION_UNSPECIFIED = 0;
+  SAGA_DIRECTION_FORWARD = 1;
+  SAGA_DIRECTION_CANCEL = 2;
+}

@@ -40,7 +40,7 @@ private fun reply(
         .setDirection(direction)
         .setOutcome(outcome)
 
-private fun record(value: ByteArray?, messageType: String? = "STOCK_BUY", topic: String = "saga.replies"): ConsumerRecord<String, ByteArray> =
+private fun record(value: ByteArray?, messageType: String? = "STOCK_BUY", topic: String = "order.reply"): ConsumerRecord<String, ByteArray> =
     ConsumerRecord<String, ByteArray>(topic, 0, 0L, "10", value).also { record ->
         record.headers().add("sagaId", "saga-1".toByteArray())
         messageType?.let { record.headers().add("messageType", it.toByteArray()) }
@@ -191,9 +191,9 @@ class SagaReplyConsumerTest : BehaviorSpec({
         }
     }
 
-    Given("saga.replies-dlt 에 도착한 레코드") {
+    Given("order.reply.dlt 에 도착한 레코드") {
         val h = ConsumerHarness()
-        val dead = record(BROKEN_BYTES, messageType = "POINT_USE", topic = "saga.replies-dlt").also {
+        val dead = record(BROKEN_BYTES, messageType = "POINT_USE", topic = "order.reply.dlt").also {
             it.headers().add(KafkaHeaders.EXCEPTION_CAUSE_FQCN, "com.google.protobuf.InvalidProtocolBufferException".toByteArray())
             it.headers().add(KafkaHeaders.EXCEPTION_MESSAGE, "Protocol message tag had invalid wire type.".toByteArray())
         }
@@ -205,7 +205,7 @@ class SagaReplyConsumerTest : BehaviorSpec({
                 verify(exactly = 1) {
                     h.deadLetterService.alert(
                         DeadLetterCommand(
-                            topic = "saga.replies-dlt",
+                            topic = "order.reply.dlt",
                             orderId = "10",
                             sagaId = "saga-1",
                             messageType = "POINT_USE",
@@ -220,7 +220,7 @@ class SagaReplyConsumerTest : BehaviorSpec({
 
     Given("원인 예외 헤더 없이 DLT 에 도착한 레코드") {
         val h = ConsumerHarness()
-        val dead = record(ByteArray(0), messageType = null, topic = "saga.replies-dlt").also {
+        val dead = record(ByteArray(0), messageType = null, topic = "order.reply.dlt").also {
             it.headers().add(KafkaHeaders.EXCEPTION_FQCN, "org.springframework.kafka.listener.ListenerExecutionFailedException".toByteArray())
         }
 

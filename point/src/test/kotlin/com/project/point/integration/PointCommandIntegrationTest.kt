@@ -101,14 +101,14 @@ class PointCommandIntegrationTest : BehaviorSpec() {
             val sagaId = UUID.randomUUID().toString()
             pointRepository.save(PointFixture.point(userId = 7001L, amount = 10000L, id = null))
 
-            When("POINT_USE 400 커맨드가 cmd.point 에 도착하면") {
+            When("POINT_USE 400 커맨드가 point.command 에 도착하면") {
                 send(70L, sagaId, "POINT_USE", use(sagaId, 70L, 7001L, 400L))
 
                 Then("잔액이 차감되고 같은 트랜잭션에서 미발행 SUCCEEDED 응답 행이 outbox 에 남는다") {
                     eventually(30.seconds) {
                         balanceOf(7001L) shouldBe 9600L
                         val reply = replies(sagaId).single()
-                        reply["topic"] shouldBe "saga.replies"
+                        reply["topic"] shouldBe "order.reply"
                         reply["message_key"] shouldBe "70"
                         reply["message_type"] shouldBe "POINT_USE"
                         reply["published_at"] shouldBe null
@@ -173,10 +173,10 @@ class PointCommandIntegrationTest : BehaviorSpec() {
         Given("모양이 맞지 않는 커맨드") {
             val sagaId = UUID.randomUUID().toString()
 
-            When("깨진 Protobuf 바이트가 cmd.point 에 도착하면") {
+            When("깨진 Protobuf 바이트가 point.command 에 도착하면") {
                 send(72L, sagaId, "POINT_USE", BROKEN_BYTES)
 
-                Then("재시도 토픽을 거치지 않고 cmd.point-dlt 로 가서 INTERNAL_ERROR 실패 응답과 POISON 알림을 남긴다") {
+                Then("재시도 토픽을 거치지 않고 point.command.dlt 로 가서 INTERNAL_ERROR 실패 응답과 POISON 알림을 남긴다") {
                     consumer(IntegrationTestConfig.DLT_TOPIC).use { dlt ->
                         val received = mutableListOf<ConsumerRecord<String, ByteArray>>()
                         eventually(20.seconds) {
@@ -203,7 +203,7 @@ class PointCommandIntegrationTest : BehaviorSpec() {
                     }
                     val reply = replies(sagaId).single()
                     val payload = payloadOf(reply)
-                    reply["topic"] shouldBe "saga.replies"
+                    reply["topic"] shouldBe "order.reply"
                     reply["message_key"] shouldBe "72"
                     reply["message_type"] shouldBe "POINT_USE"
                     reply["status"] shouldBe "PENDING"

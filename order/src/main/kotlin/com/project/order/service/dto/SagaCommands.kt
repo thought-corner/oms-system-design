@@ -3,12 +3,12 @@ package com.project.order.service.dto
 import com.project.order.domain.SagaStep
 
 enum class SagaCommandType(val topic: String) {
-    STOCK_BUY("cmd.product"),
-    STOCK_CANCEL("cmd.product"),
-    POINT_USE("cmd.point"),
-    POINT_CANCEL("cmd.point"),
-    PAYMENT_PAY("cmd.payment"),
-    PAYMENT_CANCEL("cmd.payment"),
+    STOCK_BUY("product.command"),
+    STOCK_CANCEL("product.command"),
+    POINT_USE("point.command"),
+    POINT_CANCEL("point.command"),
+    PAYMENT_PAY("payment.command"),
+    PAYMENT_CANCEL("payment.command"),
     ;
 
     companion object {

@@ -81,7 +81,7 @@ class OutboxRelayTest : BehaviorSpec({
 
             Then("레코드는 키 orderId, 값 payload, 헤더 sagaId·messageType 으로 나간다") {
                 val first = sent.captured.first()
-                first.topic shouldBe "cmd.product"
+                first.topic shouldBe "product.command"
                 first.key shouldBe "10"
                 first.payload shouldBe byteArrayOf(0x08, 0x01)
                 first.headers shouldBe mapOf(
@@ -104,7 +104,7 @@ class OutboxRelayTest : BehaviorSpec({
 
     Given("브로커가 닿지 않아 모든 행이 재시도 가능한 실패이거나 보내지 못한 배치") {
         val f = RelayFixture()
-        every { f.outboxService.claim(OutboxSource.PRODUCT) } returns listOf(message(1), message(2), message(3, "cmd.point"))
+        every { f.outboxService.claim(OutboxSource.PRODUCT) } returns listOf(message(1), message(2), message(3, "point.command"))
         every { f.publisher.publishAll(any(), any()) } returns listOf(
             PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "TimeoutException: Expiring 1 record(s)"),
             PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "broker ack timed out"),
@@ -134,7 +134,7 @@ class OutboxRelayTest : BehaviorSpec({
 
     Given("확인받은 행이 없는 배치에 재시도 가능한 실패와 영구 실패가 섞인 경우") {
         val f = RelayFixture()
-        val tooLarge = message(2, "cmd.point")
+        val tooLarge = message(2, "point.command")
         every { f.outboxService.claim(OutboxSource.POINT) } returns listOf(message(1), tooLarge)
         every { f.publisher.publishAll(any(), any()) } returns listOf(
             PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "TimeoutException: Expiring 1 record(s)"),

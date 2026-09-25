@@ -104,7 +104,7 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
             val orderId = 501L
             val sagaId = UUID.randomUUID().toString()
 
-            When("cmd.payment 에 PAYMENT_PAY 커맨드가 오면") {
+            When("payment.command 에 PAYMENT_PAY 커맨드가 오면") {
                 pay(orderId, sagaId)
 
                 Then("PAID 결제 1건과 같은 트랜잭션의 SUCCEEDED 응답 outbox 행이 남는다") {
@@ -112,7 +112,7 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
                         val payment = paymentRepository.findBySagaId(sagaId).shouldNotBeNull()
                         payment.status shouldBe PaymentStatus.PAID
                         val reply = replyOf(sagaId, "PAYMENT_PAY").shouldNotBeNull()
-                        reply.topic shouldBe "saga.replies"
+                        reply.topic shouldBe "order.reply"
                         reply.messageKey shouldBe orderId.toString()
                         reply.status shouldBe OutboxStatus.PENDING
                         reply.failCount shouldBe 0
@@ -154,10 +154,10 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
         Given("Protobuf 바이트가 깨진 커맨드") {
             val sagaId = UUID.randomUUID().toString()
 
-            When("cmd.payment 에 들어오면") {
+            When("payment.command 에 들어오면") {
                 send(502L, sagaId, "PAYMENT_PAY", byteArrayOf(0x0A, 0x7F, 0x01))
 
-                Then("재시도 토픽을 거치지 않고 cmd.payment-dlt 로 가서 INTERNAL_ERROR 실패 응답과 POISON 알림을 남긴다") {
+                Then("재시도 토픽을 거치지 않고 payment.command.dlt 로 가서 INTERNAL_ERROR 실패 응답과 POISON 알림을 남긴다") {
                     val dead = records(IntegrationTestConfig.DLT_TOPIC, sagaId, Duration.ofSeconds(10))
                     dead.size shouldBe 1
                     dead.single().key() shouldBe "502"
@@ -174,7 +174,7 @@ class PaymentCommandIntegrationTest : BehaviorSpec() {
                         }
                     }
                     val reply = outboxMessageRepository.findAll().filter { it.sagaId == sagaId }.single()
-                    reply.topic shouldBe "saga.replies"
+                    reply.topic shouldBe "order.reply"
                     reply.messageKey shouldBe "502"
                     reply.messageType shouldBe "PAYMENT_PAY"
                     reply.status shouldBe OutboxStatus.PENDING

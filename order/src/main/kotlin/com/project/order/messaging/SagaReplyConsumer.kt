@@ -39,7 +39,7 @@ class SagaReplyConsumer(
         headers().lastHeader(name)?.value()?.toString(Charsets.UTF_8)
 
     companion object {
-        const val REPLY_TOPIC = "saga.replies"
+        const val REPLY_TOPIC = "order.reply"
         const val SAGA_ID_HEADER = "sagaId"
         const val MESSAGE_TYPE_HEADER = "messageType"
     }

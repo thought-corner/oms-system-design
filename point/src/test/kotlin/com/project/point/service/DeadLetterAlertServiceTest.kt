@@ -24,7 +24,7 @@ private fun deadLetter(
     orderId: String? = "10",
     sagaId: String? = SAGA_ID,
     exceptionClass: String? = PROTOBUF_FAILURE,
-) = DeadLetterCommand("cmd.point", orderId, sagaId, messageType, exceptionClass, "broken")
+) = DeadLetterCommand("point.command", orderId, sagaId, messageType, exceptionClass, "broken")
 
 private fun alertOf(alertSender: AlertSender): DeadLetterAlert {
     val alert = slot<DeadLetterAlert>()
@@ -45,7 +45,7 @@ class DeadLetterAlertServiceTest : BehaviorSpec({
             Then("업무 결과로 바꾸지 않고 RETRY_EXHAUSTED 로 알리기만 한다") {
                 verify { pointService wasNot Called }
                 alertOf(alertSender) shouldBe DeadLetterAlert(
-                    "cmd.point", "10", SAGA_ID, "POINT_USE", "org.springframework.dao.CannotAcquireLockException", "broken",
+                    "point.command", "10", SAGA_ID, "POINT_USE", "org.springframework.dao.CannotAcquireLockException", "broken",
                     DeadLetterKind.RETRY_EXHAUSTED, false,
                 )
             }
