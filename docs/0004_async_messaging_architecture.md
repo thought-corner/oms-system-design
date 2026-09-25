@@ -326,7 +326,7 @@ Outbox의 쓰기는 비즈니스 변경과 같은 트랜잭션이어야 하므�
 - 정방향 성공 응답은 사가가 `RUNNING`이고 `step`이 `currentStep`과 같을 때만 반영한다.
 - 실패 응답도 사가가 `RUNNING`이고 `step`이 `currentStep`과 같고 `payment_done`이 꺼져 있을 때만 보상을 시작한다. 이 조건이 없으면 재시도 토픽을 거쳐 몇 분 늦게 처리된 옛
   실패 응답이, 그사이 재발행으로 결제까지 전진한 사가를 보상시켜 A-24를 어긴다. 이 규칙으로 "실패 뒤 성공"과 "성공 뒤 실패"가 모두 먼저 반영된 쪽으로 수렴한다.
-- 이미 `COMPENSATING`이면 `code`만 비어 있을 때 채우고 보상을 다시 발행하지 않는다.
+- 이미 `COMPENSATING`이면 무시하고 보상을 다시 발행하지 않는다. 보상은 `code`를 먼저 채운 뒤에만 시작하므로 보상 중인 사가의 `code`는 비어 있을 수 없다.
 - `SAGA_ALREADY_COMPENSATED`는 실패가 아니라 늦은 정방향이 거부됐다는 뜻이므로 무시한다.
 - 보상 응답은 참여자별로 기록하고 (`stock_canceled`·`point_canceled`·`payment_canceled`), 셋이 모두 켜졌을 때만 `COMPENSATED`·`FAILED`로 닫는다.
   개수로 세면 같은 응답이 두 번 올 때 셋이 오기 전에 닫힌다.
