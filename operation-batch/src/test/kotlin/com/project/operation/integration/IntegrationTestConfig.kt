@@ -41,8 +41,8 @@ class IntegrationTestConfig {
 
     companion object {
         const val PASSWORD = "1234"
-        const val COMMAND_TOPIC = "cmd.product"
-        const val REPLY_TOPIC = "saga.replies"
+        const val COMMAND_TOPIC = "product.command"
+        const val REPLY_TOPIC = "order.reply"
         val INFRA_INIT_SQL = File("../infra/mysql/init/01-schemas.sql")
     }
 }

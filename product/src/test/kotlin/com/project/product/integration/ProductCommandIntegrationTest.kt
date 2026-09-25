@@ -96,16 +96,16 @@ class ProductCommandIntegrationTest : BehaviorSpec() {
             val sagaId = UUID.randomUUID().toString()
             val before = quantityOf(1L)
 
-            When("cmd.product 에 상품 1을 3개 사는 STOCK_BUY 가 오면") {
+            When("product.command 에 상품 1을 3개 사는 STOCK_BUY 가 오면") {
                 publish(2001L, sagaId, "STOCK_BUY", buyCommand(sagaId, 2001L, 1L, 3L))
 
-                Then("재고 차감과 같은 트랜잭션으로 saga.replies 행 하나를 outbox 에 남긴다") {
+                Then("재고 차감과 같은 트랜잭션으로 order.reply 행 하나를 outbox 에 남긴다") {
                     eventually(30.seconds) {
                         replies(sagaId).size shouldBe 1
                     }
                     val reply = replies(sagaId).single()
                     val payload = payloadOf(reply)
-                    reply["topic"] shouldBe "saga.replies"
+                    reply["topic"] shouldBe "order.reply"
                     reply["message_key"] shouldBe "2001"
                     reply["message_type"] shouldBe "STOCK_BUY"
                     reply["published_at"] shouldBe null
@@ -146,10 +146,10 @@ class ProductCommandIntegrationTest : BehaviorSpec() {
             val sagaId = UUID.randomUUID().toString()
             val broken = byteArrayOf(0x0A, 0x05, 0x73)
 
-            When("cmd.product 에 오면") {
+            When("product.command 에 오면") {
                 publish(2003L, sagaId, "STOCK_BUY", broken)
 
-                Then("재시도 토픽을 거치지 않고 cmd.product-dlt 로 가서 INTERNAL_ERROR 실패 응답과 POISON 알림을 남긴다") {
+                Then("재시도 토픽을 거치지 않고 product.command.dlt 로 가서 INTERNAL_ERROR 실패 응답과 POISON 알림을 남긴다") {
                     consumer(IntegrationTestConfig.DLT_TOPIC).use { dlt ->
                         val received = mutableListOf<ConsumerRecord<String, ByteArray>>()
                         eventually(30.seconds) {
@@ -177,7 +177,7 @@ class ProductCommandIntegrationTest : BehaviorSpec() {
                     }
                     val reply = replies(sagaId).single()
                     val payload = payloadOf(reply)
-                    reply["topic"] shouldBe "saga.replies"
+                    reply["topic"] shouldBe "order.reply"
                     reply["message_key"] shouldBe "2003"
                     reply["message_type"] shouldBe "STOCK_BUY"
                     reply["status"] shouldBe "PENDING"

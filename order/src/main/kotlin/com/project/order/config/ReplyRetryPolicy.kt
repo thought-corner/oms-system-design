@@ -3,9 +3,9 @@ package com.project.order.config
 import com.project.order.exception.NonRetryableExceptions
 
 object ReplyRetryPolicy {
-    const val REPLY_TOPIC = "saga.replies"
-    const val RETRY_TOPIC_SUFFIX = "-retry"
-    const val DLT_SUFFIX = "-dlt"
+    const val REPLY_TOPIC = "order.reply"
+    const val RETRY_TOPIC_SUFFIX = ".retry"
+    const val DLT_SUFFIX = ".dlt"
     const val DLT_HANDLER_BEAN = "sagaReplyConsumer"
     const val DLT_HANDLER_METHOD = "onDeadLetter"
 

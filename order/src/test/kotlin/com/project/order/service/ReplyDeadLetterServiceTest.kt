@@ -11,7 +11,7 @@ import io.mockk.slot
 import io.mockk.verify
 
 private fun deadLetter(exceptionClass: String?) =
-    DeadLetterCommand("saga.replies-dlt", "10", "saga-1", "POINT_USE", exceptionClass, "broken")
+    DeadLetterCommand("order.reply.dlt", "10", "saga-1", "POINT_USE", exceptionClass, "broken")
 
 private fun kindOf(exceptionClass: String?): DeadLetterKind {
     val alertSender = mockk<AlertSender>(relaxed = true)
@@ -35,7 +35,7 @@ class ReplyDeadLetterServiceTest : BehaviorSpec({
                     alertSender.send(
                         ReplyDeadLetterAlert(
                             DeadLetterKind.POISON,
-                            "saga.replies-dlt",
+                            "order.reply.dlt",
                             "10",
                             "saga-1",
                             "POINT_USE",

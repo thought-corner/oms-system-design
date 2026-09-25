@@ -38,7 +38,7 @@ private val BROKEN_BYTES: ByteArray = byteArrayOf(0x0A, 0x05, 0x73)
 
 private val BUY_COMMAND = BuyCommand("saga-1", 10L, listOf(BuyCommand.Item(1L, 2L), BuyCommand.Item(2L, 1L)))
 
-private fun record(messageType: String?, value: ByteArray, topic: String = "cmd.product", vararg extraHeaders: Pair<String, String>) =
+private fun record(messageType: String?, value: ByteArray, topic: String = "product.command", vararg extraHeaders: Pair<String, String>) =
     ConsumerRecord(topic, 0, 0L, "10", value).also { record ->
         record.headers().add(RecordHeader("sagaId", "saga-1".toByteArray()))
         messageType?.let { record.headers().add(RecordHeader("messageType", it.toByteArray())) }
@@ -242,8 +242,8 @@ class ProductCommandConsumerTest : BehaviorSpec({
         val deadLetter = record(
             "STOCK_BUY",
             BUY_BYTES,
-            "cmd.product-dlt",
-            KafkaHeaders.ORIGINAL_TOPIC to "cmd.product",
+            "product.command.dlt",
+            KafkaHeaders.ORIGINAL_TOPIC to "product.command",
             KafkaHeaders.EXCEPTION_FQCN to "org.springframework.kafka.listener.ListenerExecutionFailedException",
             KafkaHeaders.EXCEPTION_CAUSE_FQCN to "java.lang.IllegalStateException",
             KafkaHeaders.EXCEPTION_MESSAGE to "db down",
@@ -255,7 +255,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
             Then("원래 토픽·키·헤더·원인 예외를 실어 운영자에게 알리고 서비스 로직은 다시 부르지 않는다") {
                 verify(exactly = 1) {
                     deadLetterService.handle(
-                        DeadLetterCommand("cmd.product", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalStateException", "db down"),
+                        DeadLetterCommand("product.command", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalStateException", "db down"),
                     )
                 }
                 verify { productService wasNot Called }
@@ -268,7 +268,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         val deadLetter = record(
             "STOCK_BUY",
             BUY_BYTES,
-            "cmd.product-dlt",
+            "product.command.dlt",
             KafkaHeaders.EXCEPTION_FQCN to "java.lang.IllegalArgumentException",
         )
 
@@ -278,7 +278,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
             Then("레코드 토픽과 최상위 예외 이름으로 알린다") {
                 verify(exactly = 1) {
                     deadLetterService.handle(
-                        DeadLetterCommand("cmd.product-dlt", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalArgumentException", null),
+                        DeadLetterCommand("product.command.dlt", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalArgumentException", null),
                     )
                 }
             }

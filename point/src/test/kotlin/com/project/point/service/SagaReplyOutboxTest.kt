@@ -30,8 +30,8 @@ class SagaReplyOutboxTest : BehaviorSpec({
             outbox.failed(PointMessageType.POINT_USE, "saga-1", 10L, PointErrorCode.INSUFFICIENT_POINT)
             val payload = SagaReplyMessage.parseFrom(saved.captured.payload)
 
-            Then("saga.replies 로 키 orderId, 헤더 값 sagaId·POINT_USE 인 행을 넣고 Protobuf 본문은 POINT 단계의 FAILED 와 code 를 싣는다") {
-                saved.captured.topic shouldBe "saga.replies"
+            Then("order.reply 로 키 orderId, 헤더 값 sagaId·POINT_USE 인 행을 넣고 Protobuf 본문은 POINT 단계의 FAILED 와 code 를 싣는다") {
+                saved.captured.topic shouldBe "order.reply"
                 saved.captured.messageKey shouldBe "10"
                 saved.captured.sagaId shouldBe "saga-1"
                 saved.captured.messageType shouldBe "POINT_USE"

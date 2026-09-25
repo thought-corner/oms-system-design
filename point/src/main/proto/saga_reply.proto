@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package msa.saga.v1;
+
+import "saga_step.proto";
+import "saga_direction.proto";
+import "saga_outcome.proto";
+
+option java_multiple_files = true;
+option java_package = "com.project.message.point";
+
+message SagaReply {
+  string saga_id = 1;
+  int64 order_id = 2;
+  SagaStep step = 3;
+  SagaDirection direction = 4;
+  SagaOutcome outcome = 5;
+  optional string code = 6;
+  optional int64 total_price = 7;
+}

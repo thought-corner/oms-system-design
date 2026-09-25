@@ -27,6 +27,7 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
     listener:
+      missing-topics-fatal: true
       ack-mode: record
       concurrency: 3
 

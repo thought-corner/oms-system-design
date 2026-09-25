@@ -20,7 +20,7 @@ class IntegrationTestConfig {
 
     @Bean
     fun topics(): KafkaAdmin.NewTopics = KafkaAdmin.NewTopics(
-        *listOf(REPLY_TOPIC, RETRY_0_TOPIC, "$REPLY_TOPIC-retry-1", "$REPLY_TOPIC-retry-2", DLT_TOPIC)
+        *listOf(REPLY_TOPIC, RETRY_0_TOPIC, "$REPLY_TOPIC.retry-1", "$REPLY_TOPIC.retry-2", DLT_TOPIC)
             .map { TopicBuilder.name(it).partitions(3).build() }
             .toTypedArray(),
     )
@@ -30,8 +30,8 @@ class IntegrationTestConfig {
     fun alertSender(): AlertSender = mockk(relaxed = true)
 
     companion object {
-        const val REPLY_TOPIC = "saga.replies"
-        const val RETRY_0_TOPIC = "saga.replies-retry-0"
-        const val DLT_TOPIC = "saga.replies-dlt"
+        const val REPLY_TOPIC = "order.reply"
+        const val RETRY_0_TOPIC = "order.reply.retry-0"
+        const val DLT_TOPIC = "order.reply.dlt"
     }
 }

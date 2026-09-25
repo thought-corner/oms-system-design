@@ -6,10 +6,10 @@ import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldStartWith
 
 private val RETRY_EXHAUSTED_ALERT =
-    DeadLetterAlert("cmd.point", "10", "saga-1", "POINT_USE", "java.lang.IllegalStateException", "db down", DeadLetterKind.RETRY_EXHAUSTED, false)
+    DeadLetterAlert("point.command", "10", "saga-1", "POINT_USE", "java.lang.IllegalStateException", "db down", DeadLetterKind.RETRY_EXHAUSTED, false)
 
 private val POISON_REPLIED_ALERT =
-    DeadLetterAlert("cmd.point", "10", "saga-1", "POINT_USE", "tools.jackson.core.JacksonException", "broken", DeadLetterKind.POISON, true)
+    DeadLetterAlert("point.command", "10", "saga-1", "POINT_USE", "tools.jackson.core.JacksonException", "broken", DeadLetterKind.POISON, true)
 
 private val POISON_UNREPLIED_ALERT = POISON_REPLIED_ALERT.copy(failedReplyWritten = false)
 
@@ -101,7 +101,7 @@ class AlertMessageFormatterTest : BehaviorSpec({
             val message = AlertMessageFormatter.format(RETRY_EXHAUSTED_ALERT.copy(exceptionMessage = "x".repeat(600)))
 
             Then("설명 뒤에 개발자용 로그 블록을 붙이고 예외 메시지는 한도에서 자른다") {
-                message shouldContain "\n\n[개발자용 로그]\n```\nkind=RETRY_EXHAUSTED\nfailedReplyWritten=false\ntopic=cmd.point\norderId=10\nsagaId=saga-1\nmessageType=POINT_USE\nexception=java.lang.IllegalStateException\n"
+                message shouldContain "\n\n[개발자용 로그]\n```\nkind=RETRY_EXHAUSTED\nfailedReplyWritten=false\ntopic=point.command\norderId=10\nsagaId=saga-1\nmessageType=POINT_USE\nexception=java.lang.IllegalStateException\n"
                 message shouldContain "message=" + "x".repeat(AlertMessageFormatter.EXCEPTION_MESSAGE_LIMIT) + "…\n```"
                 message shouldNotContain "x".repeat(AlertMessageFormatter.EXCEPTION_MESSAGE_LIMIT + 1)
             }

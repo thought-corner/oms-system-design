@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package msa.saga.v1;
+
+option java_multiple_files = true;
+option java_package = "com.project.message.order";
+
+message PaymentCancelCommand {
+  string saga_id = 1;
+  int64 order_id = 2;
+}

@@ -85,7 +85,7 @@ object OrderFixture {
         sagaId: String = DEFAULT_SAGA_ID,
     ): OutboxMessage = OutboxMessage(
         messageId = "message-$sagaId-$messageType",
-        topic = "cmd.product",
+        topic = "product.command",
         messageKey = DEFAULT_ORDER_ID.toString(),
         sagaId = sagaId,
         messageType = messageType,
