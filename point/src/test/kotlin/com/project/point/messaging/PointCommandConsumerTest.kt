@@ -175,7 +175,7 @@ class PointCommandConsumerTest : BehaviorSpec({
     Given("정상 POINT_USE 와 POINT_CANCEL") {
         val pointService = pointService()
         every { pointService.use(any()) } just Runs
-        every { pointService.cancel(any()) } returns 400L
+        every { pointService.cancel(any()) } just Runs
         val consumer = PointCommandConsumer(pointService, mockk())
 
         When("차례로 소비하면") {

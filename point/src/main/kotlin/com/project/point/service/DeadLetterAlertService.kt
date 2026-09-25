@@ -7,7 +7,7 @@ import com.project.point.client.DeadLetterKind
 import com.project.point.exception.NonRetryableExceptions
 import com.project.point.service.dto.DeadLetterCommand
 import com.project.point.service.dto.PointMessageType
-import com.project.point.service.dto.SagaDirection
+import com.project.point.service.dto.ReplyDirection
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -42,7 +42,7 @@ class DeadLetterAlertService(
 
     private fun recordForwardFailure(deadLetter: DeadLetterCommand): Boolean {
         PointMessageType.entries.firstOrNull { it.name == deadLetter.messageType }
-            ?.takeIf { it.direction == SagaDirection.FORWARD }
+            ?.takeIf { it.direction == ReplyDirection.FORWARD }
             ?: return false
         val orderId = deadLetter.orderId?.toLongOrNull() ?: return false
         val sagaId = deadLetter.sagaId?.takeIf(::isSagaId) ?: return false
