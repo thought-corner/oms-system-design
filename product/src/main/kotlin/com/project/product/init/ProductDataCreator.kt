@@ -12,7 +12,12 @@ class ProductDataCreator(
 
     @PostConstruct
     fun createSeedData() {
-        productRepository.save(Product(id = 1L, quantity = 100L, price = 100L))
-        productRepository.save(Product(id = 2L, quantity = 100L, price = 200L))
+        if (productRepository.count() > 0) return
+        seedProducts().forEach { productRepository.save(it) }
     }
+
+    private fun seedProducts(): List<Product> = listOf(
+        Product(id = 1L, quantity = 100L, price = 100L),
+        Product(id = 2L, quantity = 100L, price = 200L),
+    )
 }
