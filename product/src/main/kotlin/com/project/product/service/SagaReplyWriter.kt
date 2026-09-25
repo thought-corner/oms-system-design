@@ -38,7 +38,7 @@ class SagaReplyWriter(
         outboxMessageRepository.save(
             OutboxMessage(
                 messageId = UUID.randomUUID().toString(),
-                topic = REPLY_TOPIC,
+                topic = MessageContract.REPLY_TOPIC,
                 messageKey = reply.orderId.toString(),
                 sagaId = reply.sagaId,
                 messageType = commandType.name,
@@ -46,9 +46,5 @@ class SagaReplyWriter(
                 occurredAt = LocalDateTime.now(clock),
             ),
         )
-    }
-
-    companion object {
-        const val REPLY_TOPIC = "saga.replies"
     }
 }

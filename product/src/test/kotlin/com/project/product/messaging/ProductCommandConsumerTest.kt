@@ -5,7 +5,7 @@ import com.project.common.exception.BusinessException
 import com.project.message.product.StockBuyCommand
 import com.project.message.product.StockCancelCommand
 import com.project.product.exception.ProductErrorCode
-import com.project.product.service.CommandDeadLetterService
+import com.project.product.service.DeadLetterAlertService
 import com.project.product.service.ProductService
 import com.project.product.service.dto.BuyCancelCommand
 import com.project.product.service.dto.BuyCommand
@@ -43,7 +43,7 @@ private fun record(messageType: String?, value: ByteArray, topic: String = "cmd.
         extraHeaders.forEach { (name, headerValue) -> record.headers().add(RecordHeader(name, headerValue.toByteArray())) }
     }
 
-private fun consumer(productService: ProductService, deadLetterService: CommandDeadLetterService = mockk(relaxed = true)) =
+private fun consumer(productService: ProductService, deadLetterService: DeadLetterAlertService = mockk(relaxed = true)) =
     ProductCommandConsumer(productService, deadLetterService)
 
 class ProductCommandConsumerTest : BehaviorSpec({
@@ -52,10 +52,10 @@ class ProductCommandConsumerTest : BehaviorSpec({
         val productService = mockk<ProductService>()
 
         When("소비하면") {
-            val exception = shouldThrow<IllegalArgumentException> { consumer(productService).consume(record(null, BUY_BYTES)) }
+            val exception = shouldThrow<IllegalArgumentException> { consumer(productService).onCommand(record(null, BUY_BYTES)) }
 
             Then("재시도 없이 DLT 로 갈 IllegalArgumentException 이고 서비스를 부르지 않는다") {
-                exception.message shouldBe "messageType=null"
+                exception.message shouldBe "unknown messageType=null"
                 verify { productService wasNot Called }
             }
         }
@@ -65,10 +65,10 @@ class ProductCommandConsumerTest : BehaviorSpec({
         val productService = mockk<ProductService>()
 
         When("소비하면") {
-            val exception = shouldThrow<IllegalArgumentException> { consumer(productService).consume(record("POINT_USE", BUY_BYTES)) }
+            val exception = shouldThrow<IllegalArgumentException> { consumer(productService).onCommand(record("POINT_USE", BUY_BYTES)) }
 
             Then("IllegalArgumentException 이고 서비스를 부르지 않는다") {
-                exception.message shouldBe "messageType=POINT_USE"
+                exception.message shouldBe "unknown messageType=POINT_USE"
                 verify { productService wasNot Called }
             }
         }
@@ -78,7 +78,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         val productService = mockk<ProductService>()
 
         When("소비하면") {
-            shouldThrow<InvalidProtocolBufferException> { consumer(productService).consume(record("STOCK_BUY", BROKEN_BYTES)) }
+            shouldThrow<InvalidProtocolBufferException> { consumer(productService).onCommand(record("STOCK_BUY", BROKEN_BYTES)) }
 
             Then("재시도 없이 DLT 로 갈 InvalidProtocolBufferException 이고 서비스를 부르지 않는다") {
                 verify { productService wasNot Called }
@@ -91,7 +91,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         val value = StockCancelCommand.newBuilder().setOrderId(10L).build().toByteArray()
 
         When("소비하면") {
-            val exception = shouldThrow<IllegalArgumentException> { consumer(productService).consume(record("STOCK_CANCEL", value)) }
+            val exception = shouldThrow<IllegalArgumentException> { consumer(productService).onCommand(record("STOCK_CANCEL", value)) }
 
             Then("재시도 없이 DLT 로 갈 IllegalArgumentException 이고 서비스를 부르지 않는다") {
                 exception.message shouldBe "sagaId missing"
@@ -105,7 +105,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         val value = StockBuyCommand.newBuilder().setSagaId("saga-1").build().toByteArray()
 
         When("소비하면") {
-            val exception = shouldThrow<IllegalArgumentException> { consumer(productService).consume(record("STOCK_BUY", value)) }
+            val exception = shouldThrow<IllegalArgumentException> { consumer(productService).onCommand(record("STOCK_BUY", value)) }
 
             Then("재시도 없이 DLT 로 갈 IllegalArgumentException 이고 서비스를 부르지 않는다") {
                 exception.message shouldBe "orderId missing: sagaId=saga-1"
@@ -125,7 +125,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
 
         When("소비하면") {
             val messages = values.map { value ->
-                shouldThrow<IllegalArgumentException> { consumer(productService).consume(record("STOCK_BUY", value)) }.message
+                shouldThrow<IllegalArgumentException> { consumer(productService).onCommand(record("STOCK_BUY", value)) }.message
             }
 
             Then("재고를 건드리지 않고 빠진 필드를 밝히는 IllegalArgumentException 이다") {
@@ -145,7 +145,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         every { productService.replyBuyFailed(any(), any()) } returns Unit
 
         When("소비하면") {
-            consumer(productService).consume(record("STOCK_BUY", BUY_BYTES))
+            consumer(productService).onCommand(record("STOCK_BUY", BUY_BYTES))
 
             Then("예외를 삼키고 차감 트랜잭션과 별개로 실패 응답을 기록한다") {
                 verify(exactly = 1) { productService.buy(BUY_COMMAND) }
@@ -160,7 +160,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         every { productService.replyBuyFailed(any(), any()) } returns Unit
 
         When("소비하면") {
-            consumer(productService).consume(record("STOCK_BUY", BUY_BYTES))
+            consumer(productService).onCommand(record("STOCK_BUY", BUY_BYTES))
 
             Then("SAGA_ALREADY_COMPENSATED 실패 응답을 기록한다") {
                 verify(exactly = 1) { productService.replyBuyFailed(BUY_COMMAND, ProductErrorCode.SAGA_ALREADY_COMPENSATED) }
@@ -173,7 +173,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         every { productService.buy(BUY_COMMAND) } throws CannotAcquireLockException("lock wait timeout")
 
         When("소비하면") {
-            shouldThrow<CannotAcquireLockException> { consumer(productService).consume(record("STOCK_BUY", BUY_BYTES)) }
+            shouldThrow<CannotAcquireLockException> { consumer(productService).onCommand(record("STOCK_BUY", BUY_BYTES)) }
 
             Then("실패 응답을 남기지 않고 예외를 재시도에 넘긴다") {
                 verify(exactly = 0) { productService.replyBuyFailed(any(), any()) }
@@ -186,7 +186,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         every { productService.buy(BUY_COMMAND) } throws ArithmeticException("long overflow")
 
         When("소비하면") {
-            shouldThrow<ArithmeticException> { consumer(productService).consume(record("STOCK_BUY", BUY_BYTES)) }
+            shouldThrow<ArithmeticException> { consumer(productService).onCommand(record("STOCK_BUY", BUY_BYTES)) }
 
             Then("불변식 위반이라 실패 응답 없이 DLT 로 갈 예외를 그대로 던진다") {
                 verify(exactly = 0) { productService.replyBuyFailed(any(), any()) }
@@ -199,7 +199,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         every { productService.buy(BUY_COMMAND) } returns 400L
 
         When("소비하면") {
-            consumer(productService).consume(record("STOCK_BUY", BUY_BYTES))
+            consumer(productService).onCommand(record("STOCK_BUY", BUY_BYTES))
 
             Then("같은 메시지를 서비스 커맨드로 옮겨 차감을 부르고 실패 응답은 없다") {
                 verify(exactly = 1) { productService.buy(BUY_COMMAND) }
@@ -213,7 +213,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         every { productService.cancel(BuyCancelCommand("saga-1", 10L)) } returns 0L
 
         When("소비하면") {
-            consumer(productService).consume(record("STOCK_CANCEL", CANCEL_BYTES))
+            consumer(productService).onCommand(record("STOCK_CANCEL", CANCEL_BYTES))
 
             Then("보상을 부른다") {
                 verify(exactly = 1) { productService.cancel(BuyCancelCommand("saga-1", 10L)) }
@@ -226,7 +226,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         every { productService.cancel(any()) } throws BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND)
 
         When("소비하면") {
-            shouldThrow<BusinessException> { consumer(productService).consume(record("STOCK_CANCEL", CANCEL_BYTES)) }
+            shouldThrow<BusinessException> { consumer(productService).onCommand(record("STOCK_CANCEL", CANCEL_BYTES)) }
 
             Then("보상은 FAILED 로 응답하지 않으므로 실패 응답 없이 예외를 재시도에 넘긴다") {
                 verify(exactly = 0) { productService.replyBuyFailed(any(), any()) }
@@ -236,11 +236,12 @@ class ProductCommandConsumerTest : BehaviorSpec({
 
     Given("재시도를 모두 소진해 DLT 에 도착한 레코드") {
         val productService = mockk<ProductService>()
-        val deadLetterService = mockk<CommandDeadLetterService>(relaxed = true)
+        val deadLetterService = mockk<DeadLetterAlertService>(relaxed = true)
         val deadLetter = record(
             "STOCK_BUY",
             BUY_BYTES,
             "cmd.product-dlt",
+            KafkaHeaders.ORIGINAL_TOPIC to "cmd.product",
             KafkaHeaders.EXCEPTION_FQCN to "org.springframework.kafka.listener.ListenerExecutionFailedException",
             KafkaHeaders.EXCEPTION_CAUSE_FQCN to "java.lang.IllegalStateException",
             KafkaHeaders.EXCEPTION_MESSAGE to "db down",
@@ -249,10 +250,10 @@ class ProductCommandConsumerTest : BehaviorSpec({
         When("DLT 핸들러가 받으면") {
             consumer(productService, deadLetterService).onDeadLetter(deadLetter)
 
-            Then("토픽·키·헤더·원인 예외를 실어 운영자에게 알리고 서비스 로직은 다시 부르지 않는다") {
+            Then("원래 토픽·키·헤더·원인 예외를 실어 운영자에게 알리고 서비스 로직은 다시 부르지 않는다") {
                 verify(exactly = 1) {
                     deadLetterService.handle(
-                        DeadLetterCommand("cmd.product-dlt", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalStateException", "db down"),
+                        DeadLetterCommand("cmd.product", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalStateException", "db down"),
                     )
                 }
                 verify { productService wasNot Called }
@@ -260,8 +261,8 @@ class ProductCommandConsumerTest : BehaviorSpec({
         }
     }
 
-    Given("원인 예외 헤더가 없는 DLT 레코드") {
-        val deadLetterService = mockk<CommandDeadLetterService>(relaxed = true)
+    Given("원래 토픽·원인 예외 헤더가 없는 DLT 레코드") {
+        val deadLetterService = mockk<DeadLetterAlertService>(relaxed = true)
         val deadLetter = record(
             "STOCK_BUY",
             BUY_BYTES,
@@ -272,7 +273,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
         When("DLT 핸들러가 받으면") {
             consumer(mockk(), deadLetterService).onDeadLetter(deadLetter)
 
-            Then("최상위 예외 이름으로 알린다") {
+            Then("레코드 토픽과 최상위 예외 이름으로 알린다") {
                 verify(exactly = 1) {
                     deadLetterService.handle(
                         DeadLetterCommand("cmd.product-dlt", "10", "saga-1", "STOCK_BUY", "java.lang.IllegalArgumentException", null),

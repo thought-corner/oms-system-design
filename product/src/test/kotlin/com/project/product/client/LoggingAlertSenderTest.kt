@@ -6,7 +6,7 @@ import io.kotest.core.spec.style.BehaviorSpec
 class LoggingAlertSenderTest : BehaviorSpec({
 
     Given("DLT 에 도착한 커맨드의 알림") {
-        val alert = DeadLetterAlert("cmd.product-dlt", "10", "saga-1", "STOCK_BUY", "tools.jackson.core.JacksonException", "broken", DeadLetterKind.POISON, true)
+        val alert = DeadLetterAlert("cmd.product", "10", "saga-1", "STOCK_BUY", "tools.jackson.core.JacksonException", "broken", DeadLetterKind.POISON, true)
 
         When("알림을 보내면") {
 

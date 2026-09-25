@@ -24,7 +24,7 @@ private fun deadLetter(
     orderId: String? = "10",
     sagaId: String? = SAGA_ID,
     exceptionClass: String? = PARSE_FAILURE,
-) = DeadLetterCommand("cmd.product-dlt", orderId, sagaId, messageType, exceptionClass, "broken")
+) = DeadLetterCommand("cmd.product", orderId, sagaId, messageType, exceptionClass, "broken")
 
 private fun alertOf(alertSender: AlertSender): DeadLetterAlert {
     val alert = slot<DeadLetterAlert>()
@@ -32,12 +32,12 @@ private fun alertOf(alertSender: AlertSender): DeadLetterAlert {
     return alert.captured
 }
 
-class CommandDeadLetterServiceTest : BehaviorSpec({
+class DeadLetterAlertServiceTest : BehaviorSpec({
 
     Given("재시도를 모두 소진한 일시 장애의 STOCK_BUY") {
         val productService = mockk<ProductService>()
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(productService, alertSender)
+        val service = DeadLetterAlertService(productService, alertSender)
 
         When("DLT 에서 처리하면") {
             service.handle(deadLetter(exceptionClass = "org.springframework.dao.CannotAcquireLockException"))
@@ -45,7 +45,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
             Then("업무 결과로 바꾸지 않고 RETRY_EXHAUSTED 로 알리기만 한다") {
                 verify { productService wasNot Called }
                 alertOf(alertSender) shouldBe DeadLetterAlert(
-                    "cmd.product-dlt", "10", SAGA_ID, "STOCK_BUY", "org.springframework.dao.CannotAcquireLockException", "broken",
+                    "cmd.product", "10", SAGA_ID, "STOCK_BUY", "org.springframework.dao.CannotAcquireLockException", "broken",
                     DeadLetterKind.RETRY_EXHAUSTED, false,
                 )
             }
@@ -55,7 +55,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
     Given("원인 예외 이름이 없는 DLT 레코드") {
         val productService = mockk<ProductService>()
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(productService, alertSender)
+        val service = DeadLetterAlertService(productService, alertSender)
 
         When("DLT 에서 처리하면") {
             service.handle(deadLetter(exceptionClass = null))
@@ -70,7 +70,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
     Given("재시도 불가 예외로 DLT 에 온 STOCK_CANCEL") {
         val productService = mockk<ProductService>()
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(productService, alertSender)
+        val service = DeadLetterAlertService(productService, alertSender)
 
         When("DLT 에서 처리하면") {
             service.handle(deadLetter(messageType = "STOCK_CANCEL"))
@@ -87,7 +87,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
     Given("재시도 불가 예외로 DLT 에 온 STOCK_BUY") {
         val productService = mockk<ProductService>(relaxed = true)
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(productService, alertSender)
+        val service = DeadLetterAlertService(productService, alertSender)
 
         When("DLT 에서 처리하면") {
             service.handle(deadLetter())
@@ -115,7 +115,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
             When("${command.orderId}·${command.sagaId}·${command.messageType} 를 처리하면") {
                 val productService = mockk<ProductService>()
                 val alertSender = mockk<AlertSender>(relaxed = true)
-                CommandDeadLetterService(productService, alertSender).handle(command)
+                DeadLetterAlertService(productService, alertSender).handle(command)
 
                 Then("응답을 쓰지 않고 POISON 알림만 보낸다") {
                     verify { productService wasNot Called }
@@ -132,7 +132,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
         every { productService.replyBuyFailed(SAGA_ID, 10L, CommonErrorCode.INTERNAL_ERROR) } throws
             DataAccessResourceFailureException("db down")
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(productService, alertSender)
+        val service = DeadLetterAlertService(productService, alertSender)
 
         When("DLT 에서 처리하면") {
 
