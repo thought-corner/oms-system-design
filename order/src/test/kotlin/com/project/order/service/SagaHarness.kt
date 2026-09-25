@@ -25,7 +25,8 @@ class SagaHarness(
     val saved = mutableListOf<OutboxMessage>()
 
     val commandOutbox = SagaCommandOutbox(outboxRepository, orderItemRepository, OrderFixture.FIXED_CLOCK)
-    val progress = SagaProgress(OrderStateMachine(), SagaStateMachine(), commandOutbox, OrderFixture.FIXED_CLOCK)
+    val progress = SagaProgress(OrderStateMachine(), SagaStateMachine(), OrderFixture.FIXED_CLOCK)
+    val compensation = SagaCompensation(progress, commandOutbox)
 
     init {
         every { orderRepository.findWithWaitingLockById(OrderFixture.DEFAULT_ORDER_ID) } returns order

@@ -10,6 +10,7 @@ import com.project.message.order.StockCancelCommand
 import com.project.order.domain.Order
 import com.project.order.domain.OrderSaga
 import com.project.order.domain.OutboxMessage
+import com.project.order.domain.OutboxStatus
 import com.project.order.domain.SagaStep
 import com.project.order.repository.OrderItemRepository
 import com.project.order.repository.OutboxMessageRepository
@@ -60,6 +61,19 @@ class SagaCommandOutbox(
             SagaCommandType.cancelOf(step).also { append(it, saga, cancelOf(step, saga)) }
         }
 
+    fun awaitingRelay(saga: OrderSaga, forward: Boolean): List<OutboxMessage> {
+        val needed = neededCommands(saga, forward)
+        return outboxMessageRepository.findAllBySagaIdAndStatusInOrderByIdAsc(saga.sagaId, UNPUBLISHED)
+            .filter { it.status == OutboxStatus.PENDING || it.messageType in needed }
+    }
+
+    private fun neededCommands(saga: OrderSaga, forward: Boolean): Set<String> =
+        when {
+            !forward -> saga.pendingCancels.map { SagaCommandType.cancelOf(it).name }.toSet()
+            saga.paymentDone -> emptySet()
+            else -> setOf(SagaCommandType.forwardOf(saga.currentStep).name)
+        }
+
     private fun cancelOf(step: SagaStep, saga: OrderSaga): MessageLite =
         when (step) {
             SagaStep.STOCK -> StockCancelCommand.newBuilder().setSagaId(saga.sagaId).setOrderId(saga.orderId).build()
@@ -79,5 +93,9 @@ class SagaCommandOutbox(
                 occurredAt = LocalDateTime.now(clock),
             ),
         )
+    }
+
+    companion object {
+        private val UNPUBLISHED = listOf(OutboxStatus.PENDING, OutboxStatus.FAILED)
     }
 }

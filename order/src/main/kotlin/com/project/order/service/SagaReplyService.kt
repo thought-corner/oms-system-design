@@ -21,6 +21,7 @@ class SagaReplyService(
     private val orderSagaRepository: OrderSagaRepository,
     private val sagaProgress: SagaProgress,
     private val commandOutbox: SagaCommandOutbox,
+    private val sagaCompensation: SagaCompensation,
     private val clock: Clock,
 ) {
 
@@ -76,7 +77,7 @@ class SagaReplyService(
         val failure = SagaFailureTranslator.translate(reply.step, reply.code)
 
         if (saga.canFailAt(reply.step) && sagaProgress.accepts(saga, SagaEvent.PROCEED)) {
-            sagaProgress.beginCompensation(saga, failure.errorCode.code, failure.unknownCodeError)
+            sagaCompensation.begin(saga, failure.errorCode.code, failure.unknownCodeError)
             return applied(reply)
         }
 

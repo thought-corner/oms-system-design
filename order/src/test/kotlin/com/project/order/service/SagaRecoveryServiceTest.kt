@@ -26,7 +26,7 @@ private val STUCK = StuckSaga(OrderFixture.DEFAULT_SAGA_ID, OrderFixture.DEFAULT
 private fun SagaHarness.recovery(unpublished: List<OutboxMessage> = emptyList()): SagaRecoveryService {
     every { sagaRepository.findWithLockBySagaIdAndStatusInAndUpdatedAtLessThan(saga.sagaId, any(), any()) } returns saga
     every { outboxRepository.findAllBySagaIdAndStatusInOrderByIdAsc(saga.sagaId, any()) } returns unpublished
-    return SagaRecoveryService(orderRepository, sagaRepository, outboxRepository, progress, commandOutbox, OrderFixture.FIXED_CLOCK)
+    return SagaRecoveryService(orderRepository, sagaRepository, progress, commandOutbox, compensation, OrderFixture.FIXED_CLOCK)
 }
 
 class SagaRecoveryServiceTest : BehaviorSpec({

@@ -27,7 +27,7 @@ import org.springframework.dao.CannotAcquireLockException
 
 class SagaReplyServiceTest : BehaviorSpec({
 
-    fun SagaHarness.service() = SagaReplyService(orderRepository, sagaRepository, progress, commandOutbox, OrderFixture.FIXED_CLOCK)
+    fun SagaHarness.service() = SagaReplyService(orderRepository, sagaRepository, progress, commandOutbox, compensation, OrderFixture.FIXED_CLOCK)
 
     Given("재고 단계에서 응답을 기다리며 재발행을 두 번 겪은 사가") {
         val h = SagaHarness(saga = OrderFixture.sagaAt(SagaStep.STOCK, attempts = 2))
