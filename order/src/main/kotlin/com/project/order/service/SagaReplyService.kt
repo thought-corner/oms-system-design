@@ -80,12 +80,6 @@ class SagaReplyService(
             return applied(reply)
         }
 
-        if (sagaProgress.accepts(saga, SagaEvent.RECORD_CANCEL) && saga.recordFailure(failure.errorCode.code)) {
-            failure.unknownCodeError?.let { saga.recordError(it) }
-            log.info("Saga failure code filled during compensation: sagaId={}, code={}", saga.sagaId, saga.failureCode)
-            return
-        }
-
         ignore(reply, "stale forward failure, status=${saga.status}, currentStep=${saga.currentStep}, paymentDone=${saga.paymentDone}")
     }
 

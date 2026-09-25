@@ -68,12 +68,12 @@ object OrderFixture {
     fun compensatingSaga(
         status: SagaStatus = SagaStatus.COMPENSATING,
         canceled: List<SagaStep> = emptyList(),
-        failureCode: String? = "INSUFFICIENT_POINT",
+        failureCode: String = "INSUFFICIENT_POINT",
         attempts: Int = 0,
         updatedAt: LocalDateTime = STALE_TIME,
     ): OrderSaga = sagaAt(SagaStep.POINT, updatedAt = updatedAt).also { saga ->
         saga.transitionTo(status, updatedAt)
-        failureCode?.let { saga.recordFailure(it) }
+        saga.recordFailure(failureCode)
         canceled.forEach { saga.canceled(it, updatedAt) }
         repeat(attempts) { saga.countAttempt() }
     }

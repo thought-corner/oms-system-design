@@ -138,13 +138,8 @@ class OrderSagaTest : BehaviorSpec({
         }
     }
 
-    Given("보상을 시작한 사가") {
-        val saga = OrderFixture.compensatingSaga(failureCode = null)
-
-        Then("세 곳 모두 되돌릴 대상이고 결제 → 포인트 → 재고 순이다") {
-            saga.allCanceled shouldBe false
-            saga.pendingCancels shouldBe listOf(SagaStep.PAYMENT, SagaStep.POINT, SagaStep.STOCK)
-        }
+    Given("정방향 실패를 받은 사가") {
+        val saga = OrderFixture.sagaAt(SagaStep.POINT)
 
         When("실패 코드를 두 번 기록하면") {
             val first = saga.recordFailure("INSUFFICIENT_POINT")
@@ -155,6 +150,15 @@ class OrderSagaTest : BehaviorSpec({
                 second shouldBe false
                 saga.failureCode shouldBe "INSUFFICIENT_POINT"
             }
+        }
+    }
+
+    Given("보상을 시작한 사가") {
+        val saga = OrderFixture.compensatingSaga()
+
+        Then("세 곳 모두 되돌릴 대상이고 결제 → 포인트 → 재고 순이다") {
+            saga.allCanceled shouldBe false
+            saga.pendingCancels shouldBe listOf(SagaStep.PAYMENT, SagaStep.POINT, SagaStep.STOCK)
         }
 
         When("포인트 보상 응답이 두 번 오면") {

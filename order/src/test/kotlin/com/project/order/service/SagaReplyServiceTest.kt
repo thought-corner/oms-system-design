@@ -245,21 +245,6 @@ class SagaReplyServiceTest : BehaviorSpec({
         }
     }
 
-    Given("실패 코드가 비어 있는 채 보상 중인 사가") {
-        val h = SagaHarness(saga = OrderFixture.compensatingSaga(failureCode = null))
-
-        When("실패 응답이 오면") {
-            h.service().handle(CommandFixture.failed(SagaStep.POINT, "INSUFFICIENT_POINT"))
-
-            Then("코드만 채우고 보상을 다시 발행하지 않으며 updated_at 도 그대로다") {
-                h.saga.failureCode shouldBe "INSUFFICIENT_POINT"
-                h.saga.status shouldBe SagaStatus.COMPENSATING
-                h.saga.updatedAt shouldBe OrderFixture.STALE_TIME
-                h.saved.shouldBeEmpty()
-            }
-        }
-    }
-
     Given("잔액 부족으로 보상 중인 사가") {
         val h = SagaHarness(saga = OrderFixture.compensatingSaga(failureCode = "INSUFFICIENT_POINT"))
 
