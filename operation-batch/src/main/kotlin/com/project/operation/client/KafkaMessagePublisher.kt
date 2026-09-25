@@ -2,7 +2,7 @@ package com.project.operation.client
 
 import com.project.operation.client.dto.OutgoingMessage
 import com.project.operation.client.dto.PublishOutcome
-import com.project.operation.client.dto.PublishResult
+import com.project.operation.client.dto.UnpublishedKind
 import org.apache.kafka.common.errors.RetriableException
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.header.internals.RecordHeader
@@ -30,11 +30,8 @@ class KafkaMessagePublisher(
                 return@map Skipped("deadline exceeded before send")
             }
             send(message).also { sent ->
-                when {
-                    sent is Rejected && isRetriable(sent.cause) ->
-                        unreachableTopics[message.topic] = rootCause(sent.cause)
-                    sent is Sent && sent.future.isCompletedExceptionally ->
-                        unreachableTopics[message.topic] = rootCause(failureOf(sent.future))
+                if (sent is Rejected && isRetriable(sent.cause)) {
+                    unreachableTopics[message.topic] = rootCause(sent.cause)
                 }
             }
         }
@@ -49,31 +46,28 @@ class KafkaMessagePublisher(
     }
 
     private fun await(send: Send, deadlineAt: Long): PublishOutcome = when (send) {
-        is Skipped -> PublishOutcome(PublishResult.NOT_SENT, send.reason)
+        is Skipped -> PublishOutcome.Unpublished(UnpublishedKind.NOT_SENT, send.reason)
         is Rejected -> failed(send.cause)
         is Sent -> try {
             send.future.get((deadlineAt - System.nanoTime()).coerceAtLeast(0), TimeUnit.NANOSECONDS)
-            PublishOutcome(PublishResult.ACKED)
+            PublishOutcome.Acked
         } catch (e: TimeoutException) {
-            PublishOutcome(PublishResult.RETRIABLE_FAILURE, "broker ack timed out")
+            PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "broker ack timed out")
         } catch (e: ExecutionException) {
             failed(e)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            PublishOutcome(PublishResult.RETRIABLE_FAILURE, "interrupted")
+            PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "interrupted")
         }
     }
 
     private fun failed(e: Throwable): PublishOutcome {
-        val result = if (isRetriable(e)) PublishResult.RETRIABLE_FAILURE else PublishResult.PERMANENT_FAILURE
-        return PublishOutcome(result, rootCause(e))
+        val kind = if (isRetriable(e)) UnpublishedKind.RETRIABLE_FAILURE else UnpublishedKind.PERMANENT_FAILURE
+        return PublishOutcome.Unpublished(kind, rootCause(e))
     }
 
     private fun isRetriable(e: Throwable): Boolean =
         generateSequence(e) { it.cause }.any { it is RetriableException }
-
-    private fun failureOf(future: CompletableFuture<*>): Throwable =
-        future.handle { _, e -> e }.join()
 
     private fun rootCause(e: Throwable): String {
         val root = generateSequence(e) { it.cause }.last()

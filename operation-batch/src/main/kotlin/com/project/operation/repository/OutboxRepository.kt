@@ -1,10 +1,11 @@
 package com.project.operation.repository
 
-import com.project.operation.domain.OutboxBacklog
+import com.project.operation.domain.OutboxDelay
 import com.project.operation.domain.OutboxFailure
 import com.project.operation.domain.OutboxMessage
 import com.project.operation.domain.OutboxSource
 import com.project.operation.domain.OutboxStatus
+import com.project.operation.domain.PublishFailure
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -51,41 +52,61 @@ class OutboxRepository(
             mapOf("ids" to ids, "published" to OutboxStatus.PUBLISHED.name, "pending" to OutboxStatus.PENDING.name),
         )
 
-    fun findPendingFailCountsForUpdate(source: OutboxSource, ids: Collection<Long>): Map<Long, Int> =
-        jdbc.query(
-            "SELECT id, fail_count FROM ${source.table} WHERE id IN (:ids) AND status = :pending FOR UPDATE",
-            mapOf("ids" to ids, "pending" to OutboxStatus.PENDING.name),
-        ) { rs, _ -> rs.getLong("id") to rs.getInt("fail_count") }.toMap()
-
-    fun recordFailures(source: OutboxSource, failures: List<OutboxFailure>): IntArray =
+    fun countFailures(source: OutboxSource, failures: List<PublishFailure>, maxAttempts: Int): IntArray =
         jdbc.batchUpdate(
             """
             UPDATE ${source.table}
-            SET fail_count = :failCount, failed_at = NOW(6), last_error = :lastError, status = :status
+            SET status = CASE WHEN fail_count + 1 >= :maxAttempts THEN :failed ELSE :pending END,
+                fail_count = fail_count + 1,
+                failed_at = NOW(6),
+                last_error = :lastError
             WHERE id = :id AND status = :pending
             """.trimIndent(),
             failures.map { failure ->
                 MapSqlParameterSource()
                     .addValue("id", failure.message.id)
-                    .addValue("failCount", failure.failCount)
-                    .addValue("lastError", failure.lastError)
-                    .addValue("status", failure.status.name)
+                    .addValue("lastError", failure.error)
+                    .addValue("maxAttempts", maxAttempts)
+                    .addValue("failed", OutboxStatus.FAILED.name)
                     .addValue("pending", OutboxStatus.PENDING.name)
             }.toTypedArray(),
         )
 
-    fun deletePublishedBefore(source: OutboxSource, retentionDays: Long, limit: Int): Int =
-        jdbc.update(
+    fun findFailed(source: OutboxSource, messages: Collection<OutboxMessage>): List<OutboxFailure> {
+        val messagesById = messages.associateBy { it.id }
+        return jdbc.query(
+            "SELECT id, fail_count, last_error FROM ${source.table} WHERE id IN (:ids) AND status = :failed ORDER BY id",
+            mapOf("ids" to messagesById.keys, "failed" to OutboxStatus.FAILED.name),
+        ) { rs, _ ->
+            OutboxFailure(
+                message = messagesById.getValue(rs.getLong("id")),
+                failCount = rs.getInt("fail_count"),
+                lastError = rs.getString("last_error"),
+            )
+        }
+    }
+
+    fun deletePublishedBefore(source: OutboxSource, retentionDays: Long, limit: Int): Int {
+        val expiredIds = jdbc.queryForList(
             """
-            DELETE FROM ${source.table}
+            SELECT id FROM ${source.table}
             WHERE status = :published AND published_at < NOW(6) - INTERVAL :retentionDays DAY
             ORDER BY id
             LIMIT :limit
             """.trimIndent(),
             mapOf("published" to OutboxStatus.PUBLISHED.name, "retentionDays" to retentionDays, "limit" to limit),
+            Long::class.java,
         )
+        if (expiredIds.isEmpty()) {
+            return 0
+        }
+        return jdbc.update(
+            "DELETE FROM ${source.table} WHERE id IN (:ids) AND status = :published",
+            mapOf("ids" to expiredIds, "published" to OutboxStatus.PUBLISHED.name),
+        )
+    }
 
-    fun findBacklog(source: OutboxSource): OutboxBacklog =
+    fun findDelay(source: OutboxSource): OutboxDelay =
         jdbc.query(
             """
             SELECT COALESCE(SUM(status = :pending), 0) AS pending,
@@ -96,7 +117,7 @@ class OutboxRepository(
             """.trimIndent(),
             mapOf("pending" to OutboxStatus.PENDING.name, "failed" to OutboxStatus.FAILED.name),
         ) { rs, _ ->
-            OutboxBacklog(
+            OutboxDelay(
                 pending = rs.getLong("pending"),
                 oldestPendingOccurredAt = rs.getObject("oldest_pending", LocalDateTime::class.java),
                 failed = rs.getLong("failed"),

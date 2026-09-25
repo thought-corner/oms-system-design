@@ -2,7 +2,6 @@ plugins {
     jacoco
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.spring)
-    alias(libs.plugins.kotlin.jpa)
     alias(libs.plugins.spring.boot)
     alias(libs.plugins.spring.dependency.management)
 }
@@ -21,15 +20,13 @@ repositories {
 }
 
 dependencies {
-    implementation(libs.spring.boot.starter.data.jpa)
+    implementation(libs.spring.boot.starter.jdbc)
     implementation(libs.spring.boot.starter.webmvc)
     implementation(libs.spring.boot.starter.kafka)
-    implementation(libs.jackson.module.kotlin)
     implementation(libs.kotlin.reflect)
 
     runtimeOnly(libs.mysql.connector.j)
     testImplementation(libs.spring.boot.starter.test)
-    testImplementation(libs.spring.boot.data.jpa.test)
     testImplementation(libs.spring.boot.testcontainers)
     testImplementation(libs.testcontainers.kafka)
     testImplementation(libs.testcontainers.mysql)
@@ -50,12 +47,6 @@ kotlin {
     compilerOptions {
         freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
     }
-}
-
-allOpen {
-    annotation("jakarta.persistence.Entity")
-    annotation("jakarta.persistence.MappedSuperclass")
-    annotation("jakarta.persistence.Embeddable")
 }
 
 tasks.withType<Test> {

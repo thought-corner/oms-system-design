@@ -10,12 +10,4 @@ object OutboxRelayPolicy {
 
     const val MAX_PUBLISH_ATTEMPTS: Int = 5
     const val LAST_ERROR_MAX_LENGTH: Int = 255
-
-    const val RETENTION_DAYS: Long = 7
-    const val PURGE_CHUNK: Int = 1000
-    const val PURGE_CRON: String = "0 30 4 * * *"
-    const val PURGE_ZONE: String = "Asia/Seoul"
-
-    const val BACKLOG_CHECK_INTERVAL_MS: Long = 60_000
-    val BACKLOG_ALERT_AGE: Duration = Duration.ofMinutes(5)
 }

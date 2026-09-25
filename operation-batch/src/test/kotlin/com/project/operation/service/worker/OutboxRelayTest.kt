@@ -1,19 +1,17 @@
-package com.project.operation.service
+package com.project.operation.service.worker
 
 import com.project.operation.client.AlertSender
 import com.project.operation.client.KafkaMessagePublisher
-import com.project.operation.client.OutboxBacklogAlert
 import com.project.operation.client.OutboxPublishFailedAlert
 import com.project.operation.client.dto.OutgoingMessage
 import com.project.operation.client.dto.PublishOutcome
-import com.project.operation.client.dto.PublishResult
-import com.project.operation.domain.OutboxBacklog
+import com.project.operation.client.dto.UnpublishedKind
 import com.project.operation.domain.OutboxFailure
 import com.project.operation.domain.OutboxSource
-import com.project.operation.domain.OutboxStatus
 import com.project.operation.domain.PublishFailure
-import com.project.operation.fixture.OutboxFixture
 import com.project.operation.fixture.OutboxFixture.message
+import com.project.operation.service.MessageHeaders
+import com.project.operation.service.OutboxService
 import com.project.operation.service.policy.OutboxRelayPolicy
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
@@ -27,7 +25,7 @@ private class RelayFixture {
     val outboxService: OutboxService = mockk(relaxed = true)
     val publisher: KafkaMessagePublisher = mockk()
     val alertSender: AlertSender = mockk(relaxed = true)
-    val relay = OutboxRelay(outboxService, publisher, alertSender, OutboxFixture.FIXED_CLOCK)
+    val relay = OutboxRelay(outboxService, publisher, alertSender)
 
     init {
         every { outboxService.claim(any()) } returns emptyList()
@@ -57,9 +55,9 @@ class OutboxRelayTest : BehaviorSpec({
         every { f.outboxService.claim(OutboxSource.PAYMENT) } returns listOf(message(1), unknownTopic, message(3))
         val sent = slot<List<OutgoingMessage>>()
         every { f.publisher.publishAll(capture(sent), OutboxRelayPolicy.PUBLISH_DEADLINE) } returns listOf(
-            PublishOutcome(PublishResult.ACKED),
-            PublishOutcome(PublishResult.RETRIABLE_FAILURE, "UnknownTopicOrPartitionException"),
-            PublishOutcome(PublishResult.ACKED),
+            PublishOutcome.Acked,
+            PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "UnknownTopicOrPartitionException"),
+            PublishOutcome.Acked,
         )
 
         When("릴레이가 두 번 깨어나면") {
@@ -108,9 +106,9 @@ class OutboxRelayTest : BehaviorSpec({
         val f = RelayFixture()
         every { f.outboxService.claim(OutboxSource.PRODUCT) } returns listOf(message(1), message(2), message(3, "cmd.point"))
         every { f.publisher.publishAll(any(), any()) } returns listOf(
-            PublishOutcome(PublishResult.RETRIABLE_FAILURE, "TimeoutException: Expiring 1 record(s)"),
-            PublishOutcome(PublishResult.RETRIABLE_FAILURE, "broker ack timed out"),
-            PublishOutcome(PublishResult.NOT_SENT, "deadline exceeded before send"),
+            PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "TimeoutException: Expiring 1 record(s)"),
+            PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "broker ack timed out"),
+            PublishOutcome.Unpublished(UnpublishedKind.NOT_SENT, "deadline exceeded before send"),
         )
 
         When("릴레이가 여러 임대 주기 동안 계속 깨어나면") {
@@ -124,7 +122,7 @@ class OutboxRelayTest : BehaviorSpec({
         }
 
         When("브로커가 돌아와 확인을 받으면") {
-            every { f.publisher.publishAll(any(), any()) } returns List(3) { PublishOutcome(PublishResult.ACKED) }
+            every { f.publisher.publishAll(any(), any()) } returns List(3) { PublishOutcome.Acked }
             f.relay.relay(OutboxSource.PRODUCT)
 
             Then("PUBLISHED 로 표시한다") {
@@ -139,8 +137,8 @@ class OutboxRelayTest : BehaviorSpec({
         val tooLarge = message(2, "cmd.point")
         every { f.outboxService.claim(OutboxSource.POINT) } returns listOf(message(1), tooLarge)
         every { f.publisher.publishAll(any(), any()) } returns listOf(
-            PublishOutcome(PublishResult.RETRIABLE_FAILURE, "TimeoutException: Expiring 1 record(s)"),
-            PublishOutcome(PublishResult.PERMANENT_FAILURE, "RecordTooLargeException: too large"),
+            PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "TimeoutException: Expiring 1 record(s)"),
+            PublishOutcome.Unpublished(UnpublishedKind.PERMANENT_FAILURE, "RecordTooLargeException: too large"),
         )
 
         When("릴레이가 깨어나면") {
@@ -159,13 +157,11 @@ class OutboxRelayTest : BehaviorSpec({
         val attempted = message(1, "no.such.topic")
         every { f.outboxService.claim(OutboxSource.POINT) } returns listOf(attempted, message(2, "no.such.topic"), message(3))
         every { f.publisher.publishAll(any(), any()) } returns listOf(
-            PublishOutcome(PublishResult.RETRIABLE_FAILURE, "TimeoutException: not present in metadata"),
-            PublishOutcome(PublishResult.NOT_SENT, "TimeoutException: not present in metadata"),
-            PublishOutcome(PublishResult.ACKED),
+            PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "TimeoutException: not present in metadata"),
+            PublishOutcome.Unpublished(UnpublishedKind.NOT_SENT, "TimeoutException: not present in metadata"),
+            PublishOutcome.Acked,
         )
-        every { f.outboxService.recordFailures(OutboxSource.POINT, any()) } returns listOf(
-            OutboxFailure(attempted, 3, OutboxStatus.PENDING, "TimeoutException: not present in metadata"),
-        )
+        every { f.outboxService.recordFailures(OutboxSource.POINT, any()) } returns emptyList()
 
         When("릴레이가 깨어나면") {
             f.relay.relay(OutboxSource.POINT)
@@ -190,7 +186,7 @@ class OutboxRelayTest : BehaviorSpec({
         val f = RelayFixture()
         every { f.outboxService.claim(OutboxSource.ORDER) } returns listOf(message(1))
         every { f.publisher.publishAll(any(), any()) } returns listOf(
-            PublishOutcome(PublishResult.NOT_SENT, "deadline exceeded before send"),
+            PublishOutcome.Unpublished(UnpublishedKind.NOT_SENT, "deadline exceeded before send"),
         )
 
         When("릴레이가 깨어나면") {
@@ -206,9 +202,9 @@ class OutboxRelayTest : BehaviorSpec({
         val f = RelayFixture()
         val broken = message(9, "no.such.topic")
         every { f.outboxService.claim(OutboxSource.PAYMENT) } returnsMany listOf(listOf(broken), emptyList())
-        every { f.publisher.publishAll(any(), any()) } returns listOf(PublishOutcome(PublishResult.PERMANENT_FAILURE, "InvalidTopicException"))
+        every { f.publisher.publishAll(any(), any()) } returns listOf(PublishOutcome.Unpublished(UnpublishedKind.PERMANENT_FAILURE, "InvalidTopicException"))
         every { f.outboxService.recordFailures(OutboxSource.PAYMENT, any()) } returns listOf(
-            OutboxFailure(broken, OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS, OutboxStatus.FAILED, "InvalidTopicException"),
+            OutboxFailure(broken, OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS, "InvalidTopicException"),
         )
 
         When("릴레이가 두 번 깨어나면") {
@@ -231,42 +227,6 @@ class OutboxRelayTest : BehaviorSpec({
                     )
                 }
                 verify(exactly = 1) { f.alertSender.send(any<OutboxPublishFailedAlert>()) }
-            }
-        }
-    }
-
-    Given("발행한 지 7일 지난 행이 한 묶음보다 많은 스키마와 정리가 실패하는 스키마") {
-        val f = RelayFixture()
-        every { f.outboxService.purgeChunk(OutboxSource.ORDER) } returnsMany listOf(OutboxRelayPolicy.PURGE_CHUNK, 3)
-        every { f.outboxService.purgeChunk(OutboxSource.PRODUCT) } throws DataAccessResourceFailureException("DELETE command denied")
-        every { f.outboxService.purgeChunk(OutboxSource.POINT) } returns 0
-        every { f.outboxService.purgeChunk(OutboxSource.PAYMENT) } returns 0
-
-        When("정리가 돌면") {
-            f.relay.purge()
-
-            Then("묶음이 가득 찬 동안 반복하고 실패한 스키마가 나머지를 막지 않는다") {
-                verify(exactly = 2) { f.outboxService.purgeChunk(OutboxSource.ORDER) }
-                verify(exactly = 1) { f.outboxService.purgeChunk(OutboxSource.POINT) }
-                verify(exactly = 1) { f.outboxService.purgeChunk(OutboxSource.PAYMENT) }
-            }
-        }
-    }
-
-    Given("가장 오래된 PENDING 행이 6분 된 스키마, 1분 된 스키마, FAILED 행만 있는 스키마, 조회가 실패하는 스키마") {
-        val f = RelayFixture()
-        val now = OutboxFixture.FIXED_TIME
-        every { f.outboxService.backlogOf(OutboxSource.ORDER) } returns OutboxBacklog(12, now.minusMinutes(6), 2)
-        every { f.outboxService.backlogOf(OutboxSource.PRODUCT) } returns OutboxBacklog(1, now.minusMinutes(1), 0)
-        every { f.outboxService.backlogOf(OutboxSource.POINT) } returns OutboxBacklog(0, null, 3)
-        every { f.outboxService.backlogOf(OutboxSource.PAYMENT) } throws DataAccessResourceFailureException("down")
-
-        When("관측이 돌면") {
-            f.relay.watchBacklog()
-
-            Then("5분을 넘긴 스키마만 FAILED 행 수와 함께 알린다") {
-                verify(exactly = 1) { f.alertSender.send(OutboxBacklogAlert("order", 12, now.minusMinutes(6), 360, 2)) }
-                verify(exactly = 1) { f.alertSender.send(any<OutboxBacklogAlert>()) }
             }
         }
     }

@@ -1,31 +1,35 @@
 package com.project.operation.service
 
-import com.project.operation.domain.OutboxBacklog
+import com.project.operation.domain.OutboxDelay
 import com.project.operation.domain.OutboxFailure
 import com.project.operation.domain.OutboxSource
-import com.project.operation.domain.OutboxStatus
 import com.project.operation.domain.PublishFailure
 import com.project.operation.fixture.OutboxFixture.message
 import com.project.operation.repository.OutboxRepository
 import com.project.operation.service.policy.OutboxRelayPolicy
+import com.project.operation.service.policy.PublishedOutboxRetentionPolicy
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 
 class OutboxServiceTest : BehaviorSpec({
 
-    Given("실패가 0번인 행, 4번인 행, 그새 PENDING 이 아니게 된 행의 발행 실패") {
+    Given("발행에 실패한 세 행 중 둘째 사유가 255자를 넘고 셋째는 그새 PENDING 이 아니게 된 경우") {
         val repository = mockk<OutboxRepository>()
         val service = OutboxService(repository)
         val longError = "E".repeat(300)
         val first = message(1)
         val second = message(2)
-        every { repository.findPendingFailCountsForUpdate(OutboxSource.ORDER, listOf(1L, 2L, 3L)) } returns mapOf(1L to 0, 2L to 4)
-        every { repository.recordFailures(OutboxSource.ORDER, any()) } returns intArrayOf(1, 1)
+        val third = message(3)
+        val counted = slot<List<PublishFailure>>()
+        every { repository.countFailures(OutboxSource.ORDER, capture(counted), OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS) } returns intArrayOf(1, 1, 0)
+        val exhausted = OutboxFailure(second, OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS, "E".repeat(255))
+        every { repository.findFailed(OutboxSource.ORDER, listOf(first, second)) } returns listOf(exhausted)
 
         When("실패를 기록하면") {
             val recorded = service.recordFailures(
@@ -33,17 +37,17 @@ class OutboxServiceTest : BehaviorSpec({
                 listOf(
                     PublishFailure(first, "broker ack timed out"),
                     PublishFailure(second, longError),
-                    PublishFailure(message(3), "broker ack timed out"),
+                    PublishFailure(third, "broker ack timed out"),
                 ),
             )
 
-            Then("fail_count 를 하나 올리고 5번째 실패만 FAILED 로 바꾸며 사유는 255자로 자른다") {
-                val expected = listOf(
-                    OutboxFailure(first, 1, OutboxStatus.PENDING, "broker ack timed out"),
-                    OutboxFailure(second, OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS, OutboxStatus.FAILED, "E".repeat(255)),
+            Then("사유를 255자로 잘라 한도와 함께 넘기고, 실제로 센 행 가운데 FAILED 가 된 행만 돌려준다") {
+                counted.captured shouldContainExactly listOf(
+                    PublishFailure(first, "broker ack timed out"),
+                    PublishFailure(second, "E".repeat(255)),
+                    PublishFailure(third, "broker ack timed out"),
                 )
-                recorded shouldContainExactly expected
-                verify(exactly = 1) { repository.recordFailures(OutboxSource.ORDER, expected) }
+                recorded shouldContainExactly listOf(exhausted)
             }
         }
     }
@@ -51,14 +55,14 @@ class OutboxServiceTest : BehaviorSpec({
     Given("모두 이미 PUBLISHED 나 FAILED 가 된 행의 발행 실패") {
         val repository = mockk<OutboxRepository>()
         val service = OutboxService(repository)
-        every { repository.findPendingFailCountsForUpdate(OutboxSource.POINT, listOf(4L)) } returns emptyMap()
+        every { repository.countFailures(OutboxSource.POINT, any(), OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS) } returns intArrayOf(0)
 
         When("실패를 기록하면") {
             val recorded = service.recordFailures(OutboxSource.POINT, listOf(PublishFailure(message(4), "timeout")))
 
-            Then("아무 행도 바꾸지 않아 FAILED 전이와 알림이 두 번 나지 않는다") {
+            Then("센 행이 없어 FAILED 를 다시 읽지 않고 알림도 두 번 나지 않는다") {
                 recorded.shouldBeEmpty()
-                verify(exactly = 0) { repository.recordFailures(any(), any()) }
+                verify(exactly = 0) { repository.findFailed(any(), any()) }
             }
         }
     }
@@ -88,18 +92,18 @@ class OutboxServiceTest : BehaviorSpec({
         val repository = mockk<OutboxRepository>()
         val service = OutboxService(repository)
         every { repository.markPublished(OutboxSource.PRODUCT, listOf(7L)) } returns 1
-        every { repository.deletePublishedBefore(OutboxSource.PRODUCT, OutboxRelayPolicy.RETENTION_DAYS, OutboxRelayPolicy.PURGE_CHUNK) } returns 3
-        every { repository.findBacklog(OutboxSource.PRODUCT) } returns OutboxBacklog(0, null, 1)
+        every { repository.deletePublishedBefore(OutboxSource.PRODUCT, PublishedOutboxRetentionPolicy.RETENTION_DAYS, PublishedOutboxRetentionPolicy.CLEANUP_CHUNK) } returns 3
+        every { repository.findDelay(OutboxSource.PRODUCT) } returns OutboxDelay(0, null, 1)
 
         When("각각 부르면") {
             val published = service.markPublished(OutboxSource.PRODUCT, listOf(7L))
-            val purged = service.purgeChunk(OutboxSource.PRODUCT)
-            val backlog = service.backlogOf(OutboxSource.PRODUCT)
+            val cleaned = service.cleanUpChunk(OutboxSource.PRODUCT)
+            val delay = service.delayOf(OutboxSource.PRODUCT)
 
             Then("보존 기간·묶음 크기 정책으로 저장소에 넘긴다") {
                 published shouldBe 1
-                purged shouldBe 3
-                backlog.failed shouldBe 1L
+                cleaned shouldBe 3
+                delay.failed shouldBe 1L
             }
         }
     }

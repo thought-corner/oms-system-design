@@ -1,11 +1,13 @@
 package com.project.operation.client
 
 import com.project.operation.client.dto.OutgoingMessage
-import com.project.operation.client.dto.PublishResult
+import com.project.operation.client.dto.PublishOutcome
+import com.project.operation.client.dto.UnpublishedKind
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -25,6 +27,10 @@ import java.util.concurrent.CompletableFuture
 
 private fun message(topic: String, key: String = "10") =
     OutgoingMessage(topic = topic, key = key, payload = byteArrayOf(0x0A, 0x02), headers = mapOf("sagaId" to "saga-1"))
+
+private fun PublishOutcome.unpublished(): PublishOutcome.Unpublished = shouldBeInstanceOf<PublishOutcome.Unpublished>()
+
+private fun List<PublishOutcome>.kinds(): List<UnpublishedKind> = map { it.unpublished().kind }
 
 private fun acked(): CompletableFuture<SendResult<String, ByteArray>> = CompletableFuture.completedFuture(mockk())
 
@@ -47,37 +53,11 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             )
 
             Then("깨진 토픽은 한 번만 시도해 재시도 가능한 실패로 두고 같은 배치의 나머지는 보내지 않으며, 정상 행은 확인받는다") {
-                outcomes.map { it.result } shouldContainExactly listOf(
-                    PublishResult.RETRIABLE_FAILURE,
-                    PublishResult.NOT_SENT,
-                    PublishResult.ACKED,
-                )
-                outcomes[0].error.orEmpty() shouldContain "TimeoutException"
-                outcomes[1].error.orEmpty() shouldContain "TimeoutException"
-                verify(exactly = 1) { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "no.such.topic" }) }
-            }
-        }
-    }
-
-    Given("이미 실패로 끝난 future 를 돌려주는 토픽의 행 둘과 정상 토픽의 행") {
-        val template = mockk<KafkaTemplate<String, ByteArray>>()
-        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "no.such.topic" }) } returns
-            failed(TimeoutException("Topic no.such.topic not present in metadata"))
-        every { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "cmd.product" }) } returns acked()
-        val publisher = KafkaMessagePublisher(template)
-
-        When("한 배치로 보내면") {
-            val outcomes = publisher.publishAll(
-                listOf(message("no.such.topic"), message("no.such.topic"), message("cmd.product")),
-                Duration.ofSeconds(5),
-            )
-
-            Then("깨진 토픽은 한 번만 시도하고 같은 토픽의 뒤 행은 보내지 않는다") {
-                outcomes.map { it.result } shouldContainExactly listOf(
-                    PublishResult.RETRIABLE_FAILURE,
-                    PublishResult.NOT_SENT,
-                    PublishResult.ACKED,
-                )
+                outcomes[0].unpublished().kind shouldBe UnpublishedKind.RETRIABLE_FAILURE
+                outcomes[1].unpublished().kind shouldBe UnpublishedKind.NOT_SENT
+                outcomes[2] shouldBe PublishOutcome.Acked
+                outcomes[0].unpublished().error shouldContain "TimeoutException"
+                outcomes[1].unpublished().error shouldContain "TimeoutException"
                 verify(exactly = 1) { template.send(match<ProducerRecord<String, ByteArray>> { it.topic() == "no.such.topic" }) }
             }
         }
@@ -97,7 +77,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             )
 
             Then("행의 문제라 그 행만 영구 실패로 두고 같은 토픽의 다음 행은 보낸다") {
-                outcomes.map { it.result } shouldContainExactly listOf(PublishResult.PERMANENT_FAILURE, PublishResult.ACKED)
+                outcomes[0].unpublished().kind shouldBe UnpublishedKind.PERMANENT_FAILURE
+                outcomes[1] shouldBe PublishOutcome.Acked
                 verify(exactly = 2) { template.send(any<ProducerRecord<String, ByteArray>>()) }
             }
         }
@@ -112,8 +93,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             val outcome = publisher.publishAll(listOf(message("cmd.point")), Duration.ofSeconds(1)).single()
 
             Then("Kafka 가 재시도 가능하다고 하지 않은 실패라 영구 실패로 돌려주고 예외를 올리지 않는다") {
-                outcome.result shouldBe PublishResult.PERMANENT_FAILURE
-                outcome.error.orEmpty() shouldContain "producer closed"
+                outcome.unpublished().kind shouldBe UnpublishedKind.PERMANENT_FAILURE
+                outcome.unpublished().error shouldContain "producer closed"
             }
         }
     }
@@ -130,9 +111,10 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             val outcomes = publisher.publishAll(listOf(message("cmd.payment"), message("cmd.payment", key = "11")), Duration.ofMillis(50))
 
             Then("첫 행은 확인 시간 초과로 재시도 가능한 실패, 마감 뒤의 행은 보내지도 않는다") {
-                outcomes.map { it.result } shouldContainExactly listOf(PublishResult.RETRIABLE_FAILURE, PublishResult.NOT_SENT)
-                outcomes[0].error shouldBe "broker ack timed out"
-                outcomes[1].error shouldBe "deadline exceeded before send"
+                outcomes shouldContainExactly listOf(
+                    PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "broker ack timed out"),
+                    PublishOutcome.Unpublished(UnpublishedKind.NOT_SENT, "deadline exceeded before send"),
+                )
                 verify(exactly = 1) { template.send(any<ProducerRecord<String, ByteArray>>()) }
             }
         }
@@ -180,8 +162,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             val outcome = publisher.publishAll(listOf(message("saga.replies")), Duration.ofSeconds(5)).single()
 
             Then("전달 시간 초과는 재시도 가능한 실패로 원인과 함께 돌려준다") {
-                outcome.result shouldBe PublishResult.RETRIABLE_FAILURE
-                outcome.error.orEmpty() shouldContain "Expiring 1 record(s)"
+                outcome.unpublished().kind shouldBe UnpublishedKind.RETRIABLE_FAILURE
+                outcome.unpublished().error shouldContain "Expiring 1 record(s)"
             }
         }
     }
@@ -195,8 +177,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             val outcomes = publisher.publishAll(listOf(message("cmd.product"), message("cmd.point")), Duration.ofSeconds(1))
 
             Then("둘 다 재시도 가능한 실패다") {
-                outcomes.map { it.result } shouldContainExactly listOf(PublishResult.RETRIABLE_FAILURE, PublishResult.RETRIABLE_FAILURE)
-                outcomes[0].error.orEmpty() shouldContain "NetworkException"
+                outcomes.kinds() shouldContainExactly List(2) { UnpublishedKind.RETRIABLE_FAILURE }
+                outcomes[0].unpublished().error shouldContain "NetworkException"
             }
         }
     }
@@ -218,8 +200,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             )
 
             Then("재시도할 수 없는 Kafka 실패라 모두 영구 실패다") {
-                outcomes.map { it.result } shouldContainExactly List(3) { PublishResult.PERMANENT_FAILURE }
-                outcomes[0].error.orEmpty() shouldContain "RecordTooLargeException"
+                outcomes.kinds() shouldContainExactly List(3) { UnpublishedKind.PERMANENT_FAILURE }
+                outcomes[0].unpublished().error shouldContain "RecordTooLargeException"
             }
         }
     }
@@ -233,8 +215,8 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             val outcome = publisher.publishAll(listOf(message("cmd.point")), Duration.ofSeconds(1)).single()
 
             Then("영구 실패다") {
-                outcome.result shouldBe PublishResult.PERMANENT_FAILURE
-                outcome.error.orEmpty() shouldContain "SerializationException"
+                outcome.unpublished().kind shouldBe UnpublishedKind.PERMANENT_FAILURE
+                outcome.unpublished().error shouldContain "SerializationException"
             }
         }
     }
@@ -252,8 +234,7 @@ class KafkaMessagePublisherTest : BehaviorSpec({
             val interrupted = Thread.interrupted()
 
             Then("재시도 가능한 실패로 돌려주고 인터럽트 표시를 되살린다") {
-                outcome.result shouldBe PublishResult.RETRIABLE_FAILURE
-                outcome.error shouldBe "interrupted"
+                outcome shouldBe PublishOutcome.Unpublished(UnpublishedKind.RETRIABLE_FAILURE, "interrupted")
                 interrupted shouldBe true
             }
         }

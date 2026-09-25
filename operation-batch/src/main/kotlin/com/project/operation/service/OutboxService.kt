@@ -1,15 +1,14 @@
 package com.project.operation.service
 
-import com.project.operation.domain.OutboxBacklog
+import com.project.operation.domain.OutboxDelay
 import com.project.operation.domain.OutboxFailure
 import com.project.operation.domain.OutboxMessage
 import com.project.operation.domain.OutboxSource
-import com.project.operation.domain.OutboxStatus
 import com.project.operation.domain.PublishFailure
 import com.project.operation.repository.OutboxRepository
 import com.project.operation.service.policy.OutboxRelayPolicy
+import com.project.operation.service.policy.PublishedOutboxRetentionPolicy
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Transactional
 
 @Service
@@ -17,7 +16,7 @@ class OutboxService(
     private val outboxRepository: OutboxRepository,
 ) {
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Transactional
     fun claim(source: OutboxSource): List<OutboxMessage> {
         val claimed = outboxRepository.findClaimable(source, OutboxRelayPolicy.BATCH_SIZE, OutboxRelayPolicy.CLAIM_LEASE_SECONDS)
         if (claimed.isNotEmpty()) {
@@ -26,34 +25,29 @@ class OutboxService(
         return claimed
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Transactional
     fun markPublished(source: OutboxSource, ids: Collection<Long>): Int =
         outboxRepository.markPublished(source, ids)
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Transactional
     fun recordFailures(source: OutboxSource, failures: List<PublishFailure>): List<OutboxFailure> {
-        val failCounts = outboxRepository.findPendingFailCountsForUpdate(source, failures.map { it.message.id })
-        val recorded = failures.mapNotNull { failure ->
-            failCounts[failure.message.id]?.let { previous -> nextFailure(failure, previous + 1) }
+        val affectedRows = outboxRepository.countFailures(
+            source,
+            failures.map { PublishFailure(it.message, it.error.take(OutboxRelayPolicy.LAST_ERROR_MAX_LENGTH)) },
+            OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS,
+        )
+        val countedMessages = failures.filterIndexed { index, _ -> affectedRows[index] > 0 }.map { it.message }
+        if (countedMessages.isEmpty()) {
+            return emptyList()
         }
-        if (recorded.isNotEmpty()) {
-            outboxRepository.recordFailures(source, recorded)
-        }
-        return recorded
+        return outboxRepository.findFailed(source, countedMessages)
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    fun purgeChunk(source: OutboxSource): Int =
-        outboxRepository.deletePublishedBefore(source, OutboxRelayPolicy.RETENTION_DAYS, OutboxRelayPolicy.PURGE_CHUNK)
+    @Transactional
+    fun cleanUpChunk(source: OutboxSource): Int =
+        outboxRepository.deletePublishedBefore(source, PublishedOutboxRetentionPolicy.RETENTION_DAYS, PublishedOutboxRetentionPolicy.CLEANUP_CHUNK)
 
-    @Transactional(isolation = Isolation.READ_COMMITTED, readOnly = true)
-    fun backlogOf(source: OutboxSource): OutboxBacklog =
-        outboxRepository.findBacklog(source)
-
-    private fun nextFailure(failure: PublishFailure, failCount: Int) = OutboxFailure(
-        message = failure.message,
-        failCount = failCount,
-        status = if (failCount >= OutboxRelayPolicy.MAX_PUBLISH_ATTEMPTS) OutboxStatus.FAILED else OutboxStatus.PENDING,
-        lastError = failure.error.take(OutboxRelayPolicy.LAST_ERROR_MAX_LENGTH),
-    )
+    @Transactional(readOnly = true)
+    fun delayOf(source: OutboxSource): OutboxDelay =
+        outboxRepository.findDelay(source)
 }
