@@ -8,7 +8,7 @@ class LoggingAlertSender : AlertSender {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    override fun send(alert: OutboxBacklogAlert) {
+    override fun send(alert: OutboxDelayAlert) {
         log.error(
             "[ALERT] outbox 발행이 밀려 사람이 확인해야 합니다. schema={}, pending={}, oldestPendingOccurredAt={}, ageSeconds={}, failed={}",
             alert.schema,

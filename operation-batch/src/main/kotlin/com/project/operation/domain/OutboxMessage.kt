@@ -2,7 +2,7 @@ package com.project.operation.domain
 
 import java.time.LocalDateTime
 
-data class OutboxMessage(
+class OutboxMessage(
     val id: Long,
     val messageId: String,
     val topic: String,
@@ -12,7 +12,7 @@ data class OutboxMessage(
     val payload: ByteArray,
 )
 
-data class OutboxBacklog(
+data class OutboxDelay(
     val pending: Long,
     val oldestPendingOccurredAt: LocalDateTime?,
     val failed: Long,
@@ -26,6 +26,5 @@ data class PublishFailure(
 data class OutboxFailure(
     val message: OutboxMessage,
     val failCount: Int,
-    val status: OutboxStatus,
     val lastError: String,
 )

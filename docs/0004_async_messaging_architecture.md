@@ -24,7 +24,7 @@ A안의 실측 (`kpi/saga_orchestration_kpi_report.md`)과 A-17~A-24가 막은 �
 | `SagaReplyHandler` | order                     | `saga.replies`를 소비해 `order_saga`를 전진시키고 다음 커맨드를 order `outbox`에 넣는다                             |
 | `SagaWatchdog`     | order                     | 응답이 60초 넘게 없는 사가의 현재 단계 커맨드를 다시 넣는다(B-11). A안 `CompensationWorker`의 후신이다              |
 | `*CommandConsumer` | product · point · payment | 커맨드를 소비해 기존 `*Service`를 부르고 응답을 자기 `outbox`에 넣는다                                              |
-| `OutboxRelay`      | operation-batch           | 네 서비스의 `outbox`를 폴링해 Kafka로 발행한다(B-5). operation-batch가 하는 일은 이것뿐이고 Kafka를 소비하지 않는다 |
+| `OutboxRelay`      | operation-batch           | 네 서비스의 `outbox`를 폴링해 Kafka로 발행한다(B-5). 7일 정리는 `PublishedOutboxCleaner`, 적체 알림은 `OutboxDelayMonitor`가 따로 맡는다. operation-batch가 하는 일은 이것뿐이고 Kafka를 소비하지 않는다 |
 
 - 참여자 셋의 HTTP 엔드포인트는 없앤다 (B-15). 서비스 사이의 입구는 커맨드 토픽 하나다.
 - `operation-batch`는 배포 단위가 하나 더 느는 모듈이다. 포트는 8084다.
@@ -215,9 +215,19 @@ DB 커밋과 메시지 발행은 서로 다른 시스템이라 한꺼번에 할 
 
 - 브로커 대기의 상한은 임대 30초보다 짧아야 한다. 길면 아직 보내는 중인 행을 다른 릴레이가 다시 집어 느린 브로커에 중복 발행을 얹는다. `delivery.timeout.ms`는 20초,
   `max.block.ms`는 5초로 두고, 한 폴링분은 비동기로 모두 보낸 뒤 하나의 마감으로 기다린다. 마감을 넘긴 행은 표시하지 않고 두어 임대가 끝나면 다시 발행한다.
+  `delivery.timeout`(20초) < 발행 마감(25초) < 임대(30초)는 `OutboxRelayPolicyTest`가 단언한다.
+  다만 마감은 보내기 전에만 확인하므로, 한 배치에 메타데이터를 받지 못한 토픽이 여럿이면 `max.block`이 토픽마다 쌓여 집은 뒤 최대 약 35초가 걸릴 수 있다.
+  릴레이가 한 인스턴스인 지금은 무해하고, 여럿이 되어 임대를 넘겨 다시 집히더라도 중복 발행은 소비자 멱등이 받는다. 그래서 이 경계는 닫지 않고 둔다.
 - `claimed_at`은 인스턴스마다 시계가 다를 수 있으므로 앱 시계가 아니라 DB 시각 (`NOW(6)`)으로 쓰고 비교한다.
-- 릴레이의 집기·표시·삭제는 READ COMMITTED로 한다. 기본 격리 수준 (RR)의 넥스트키 락이 `(status, id)` 인덱스의 미발행 구간 끝을 덮어, 서비스가 새 `outbox` 행을 넣는 것을
-  막기 때문이다. 7일 지난 행의 삭제는 `LIMIT`으로 나눠 한다.
+- 릴레이의 집기·표시·삭제는 격리 수준을 따로 지정하지 않고 DB 기본값 (MySQL은 REPEATABLE READ)을 따른다.
+  행 배타는 `SKIP LOCKED`와 임대가, 상태 전이는 조건부 `UPDATE`가 지키므로 정합성은 격리 수준에 기대지 않는다.
+  대가로 넥스트키 락이 `(status, id)` 인덱스의 미발행 구간 끝을 덮어, 서비스가 새 `outbox` 행을 넣는 것이 릴레이 트랜잭션이 끝날 때까지 기다린다.
+  릴레이 트랜잭션은 발행을 밖에 두어 짧으므로 이 대기를 받아들인다. READ COMMITTED로 낮추면 대기는 없어진다.
+- 7일 지난 행의 삭제는 `LIMIT`으로 나눠 한다.
+  한 청크는 지울 `id`를 잠그지 않고 먼저 읽은 뒤 `id IN (…) AND status = 'PUBLISHED'`로 지운다.
+  조건으로 바로 지우면 REPEATABLE READ에서 최근 7일치 `PUBLISHED` 구간과 그 앞 간격이 청크 트랜잭션 내내 잠겨, 서비스의 새 `outbox` 행과 릴레이의 발행 표시가 그동안 멈추기 때문이다.
+  PK 동등 조건은 행 락만 걸어 간격을 잠그지 않는다. 읽은 뒤 지우기 전에 행이 바뀌어도 `PUBLISHED`는 끝 상태라 조건이 어긋나지 않는다.
+  목록이 표의 대부분이면 옵티마이저가 전체 스캔을 골라 간격 락이 돌아오지만, 그때는 표가 청크 크기 안팎으로 작아 몇 ms에 끝나므로 받아들인다.
 - 스키마마다, 행마다 실패를 격리한다. 발행할 수 없는 행 하나나 한 스키마의 권한 오류가 다른 행과 스키마를 막지 않는다.
 - 스키마마다 가장 오래된 미발행 행의 나이를 보고, 5분을 넘으면 알린다.
 
@@ -569,7 +579,7 @@ A안의 8가지 (S0~S7)를 같은 방식으로 다시 재고, 다음 넷을 더�
   도메인 메서드가 판정한다.
 - 워치독은 claim보다 주문 행을 먼저 잠근다. 응답 처리와 같은 `orders` → `order_saga` 순서를 지키기 위해서다.
 - 보상 재발행이 3회를 넘긴 사가는 스윕마다 `COMPENSATING`을 거쳐 다시 `COMPENSATION_FAILED`로 돌아간다. 알림은 3회째 한 번뿐이고, 보상 응답이 오면 시도 횟수가 초기화된다.
-- outbox 적체 알림 (`OutboxStalledAlert`, operation-batch의 `OutboxBacklogAlert`)은 조건이 이어지는 동안 반복된다. 행이 `FAILED`로 바뀌는 순간의 알림
+- outbox 적체 알림 (`OutboxStalledAlert`, operation-batch의 `OutboxDelayAlert`)은 조건이 이어지는 동안 반복된다. 행이 `FAILED`로 바뀌는 순간의 알림
   (`OutboxPublishFailedAlert`)은 행마다 한 번이다.
 - 릴레이는 행마다 결과를 `ACKED`·`RETRIABLE_FAILURE`(재시도 가능한 Kafka 오류, 마감 초과)·`PERMANENT_FAILURE`(그 밖의 오류)·`NOT_SENT`(보내기 전에 마감이
   지났거나 같은 토픽의 앞 행이 곧바로 실패해 건너뜀)로 나눈다. 배치에 확인이 하나도 없고 영구 실패도 없으면 브로커 장애로 보고 아무것도 세지 않는다. 그 밖에는 `PERMANENT_FAILURE`와, 다른

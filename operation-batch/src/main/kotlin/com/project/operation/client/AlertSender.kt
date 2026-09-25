@@ -4,12 +4,12 @@ import java.time.LocalDateTime
 
 interface AlertSender {
 
-    fun send(alert: OutboxBacklogAlert)
+    fun send(alert: OutboxDelayAlert)
 
     fun send(alert: OutboxPublishFailedAlert)
 }
 
-data class OutboxBacklogAlert(
+data class OutboxDelayAlert(
     val schema: String,
     val pending: Long,
     val oldestPendingOccurredAt: LocalDateTime,
