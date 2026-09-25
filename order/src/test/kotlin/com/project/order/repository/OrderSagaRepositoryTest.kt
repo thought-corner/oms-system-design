@@ -92,7 +92,7 @@ class OrderSagaRepositoryTest : BehaviorSpec() {
                         holder.get(5, TimeUnit.SECONDS)
                     } finally {
                         executor.shutdownNow()
-                        newTransaction().execute { sagaRepository.findBySagaId(sagaId)?.let { sagaRepository.delete(it) } }
+                        newTransaction().execute { sagaRepository.findWithWaitingLockBySagaId(sagaId)?.let { sagaRepository.delete(it) } }
                     }
                 }
 

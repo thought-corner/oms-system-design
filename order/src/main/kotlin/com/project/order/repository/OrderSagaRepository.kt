@@ -12,8 +12,6 @@ import java.time.LocalDateTime
 
 interface OrderSagaRepository : JpaRepository<OrderSaga, Long> {
 
-    fun findBySagaId(sagaId: String): OrderSaga?
-
     fun existsByOrderIdAndIdempotencyKey(orderId: Long, idempotencyKey: String): Boolean
 
     fun findFirstByOrderIdOrderByIdDesc(orderId: Long): OrderSaga?

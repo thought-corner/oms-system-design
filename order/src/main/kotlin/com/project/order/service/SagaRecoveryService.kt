@@ -13,8 +13,6 @@ import com.project.order.domain.SagaEvent
 import com.project.order.domain.SagaStatus
 import com.project.order.repository.OrderRepository
 import com.project.order.repository.OrderSagaRepository
-import com.project.order.repository.OutboxMessageRepository
-import com.project.order.service.dto.SagaCommandType
 import com.project.order.service.dto.StuckSaga
 import com.project.order.service.policy.SagaRecoveryPolicy
 import org.slf4j.LoggerFactory
@@ -28,9 +26,9 @@ import java.time.LocalDateTime
 class SagaRecoveryService(
     private val orderRepository: OrderRepository,
     private val orderSagaRepository: OrderSagaRepository,
-    private val outboxMessageRepository: OutboxMessageRepository,
     private val sagaProgress: SagaProgress,
     private val commandOutbox: SagaCommandOutbox,
+    private val sagaCompensation: SagaCompensation,
     private val clock: Clock,
 ) {
 
@@ -56,9 +54,7 @@ class SagaRecoveryService(
         saga.claim(now())
 
         val forward = sagaProgress.accepts(saga, SagaEvent.PROCEED)
-        val needed = neededCommands(saga, forward)
-        val awaited = outboxMessageRepository.findAllBySagaIdAndStatusInOrderByIdAsc(saga.sagaId, UNPUBLISHED)
-            .filter { it.blocks(needed) }
+        val awaited = commandOutbox.awaitingRelay(saga, forward)
         if (awaited.isNotEmpty()) {
             return stalled(saga, awaited)
         }
@@ -69,16 +65,6 @@ class SagaRecoveryService(
 
         return resumeCompensation(order, saga)
     }
-
-    private fun neededCommands(saga: OrderSaga, forward: Boolean): Set<String> =
-        when {
-            !forward -> saga.pendingCancels.map { SagaCommandType.cancelOf(it).name }.toSet()
-            saga.paymentDone -> emptySet()
-            else -> setOf(SagaCommandType.forwardOf(saga.currentStep).name)
-        }
-
-    private fun OutboxMessage.blocks(needed: Set<String>): Boolean =
-        status == OutboxStatus.PENDING || messageType in needed
 
     private fun stalled(saga: OrderSaga, awaited: List<OutboxMessage>): SagaAlert? {
         log.info("Saga recovery waits for outbox relay: sagaId={}, unpublished={}", saga.sagaId, awaited.size)
@@ -138,8 +124,7 @@ class SagaRecoveryService(
             return null
         }
 
-        sagaProgress.advance(saga, SagaEvent.COMPENSATE)
-        val reissued = commandOutbox.appendPendingCancels(saga)
+        val reissued = sagaCompensation.resume(saga)
         log.info("Saga cancel commands re-published: sagaId={}, commands={}", saga.sagaId, reissued)
         saga.countAttempt()
 
@@ -171,7 +156,5 @@ class SagaRecoveryService(
             SagaStatus.COMPENSATING,
             SagaStatus.COMPENSATION_FAILED,
         )
-
-        private val UNPUBLISHED = listOf(OutboxStatus.PENDING, OutboxStatus.FAILED)
     }
 }

@@ -10,6 +10,7 @@ import com.project.message.order.StockCancelCommand
 import com.project.order.domain.Order
 import com.project.order.domain.OrderSaga
 import com.project.order.domain.OutboxMessage
+import com.project.order.domain.OutboxStatus
 import com.project.order.domain.SagaStep
 import com.project.order.repository.OrderItemRepository
 import com.project.order.repository.OutboxMessageRepository
@@ -27,7 +28,7 @@ class SagaCommandOutbox(
 ) {
 
     fun appendForward(saga: OrderSaga, order: Order) {
-        val type = SagaCommandType.forwardOf(saga.currentStep)
+        val type = SagaCommandType.forward(saga.currentStep)
         val payload: MessageLite = when (saga.currentStep) {
             SagaStep.STOCK -> StockBuyCommand.newBuilder()
                 .setSagaId(saga.sagaId)
@@ -57,7 +58,20 @@ class SagaCommandOutbox(
 
     fun appendPendingCancels(saga: OrderSaga): List<SagaCommandType> =
         saga.pendingCancels.map { step ->
-            SagaCommandType.cancelOf(step).also { append(it, saga, cancelOf(step, saga)) }
+            SagaCommandType.cancel(step).also { append(it, saga, cancelOf(step, saga)) }
+        }
+
+    fun awaitingRelay(saga: OrderSaga, forward: Boolean): List<OutboxMessage> {
+        val needed = neededCommands(saga, forward)
+        return outboxMessageRepository.findAllBySagaIdAndStatusInOrderByIdAsc(saga.sagaId, UNPUBLISHED)
+            .filter { it.status == OutboxStatus.PENDING || it.messageType in needed }
+    }
+
+    private fun neededCommands(saga: OrderSaga, forward: Boolean): Set<String> =
+        when {
+            !forward -> saga.pendingCancels.map { SagaCommandType.cancel(it).name }.toSet()
+            saga.paymentDone -> emptySet()
+            else -> setOf(SagaCommandType.forward(saga.currentStep).name)
         }
 
     private fun cancelOf(step: SagaStep, saga: OrderSaga): MessageLite =
@@ -79,5 +93,9 @@ class SagaCommandOutbox(
                 occurredAt = LocalDateTime.now(clock),
             ),
         )
+    }
+
+    companion object {
+        private val UNPUBLISHED = listOf(OutboxStatus.PENDING, OutboxStatus.FAILED)
     }
 }

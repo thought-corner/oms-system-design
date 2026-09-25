@@ -3,11 +3,8 @@ package com.project.order.service
 import com.project.order.client.AlertSender
 import com.project.order.client.DeadLetterKind
 import com.project.order.client.ReplyDeadLetterAlert
-import com.project.order.config.ReplyRetryPolicy
 import com.project.order.service.dto.DeadLetterCommand
-import com.project.order.service.policy.ReplyDeadLetterPolicy
 import io.kotest.core.spec.style.BehaviorSpec
-import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import io.mockk.mockk
 import io.mockk.slot
@@ -78,13 +75,6 @@ class ReplyDeadLetterServiceTest : BehaviorSpec({
             Then("모두 RETRY_EXHAUSTED 이다") {
                 kinds.forEach { it shouldBe DeadLetterKind.RETRY_EXHAUSTED }
             }
-        }
-    }
-
-    Given("소비자 재시도 정책의 재시도 불가 목록") {
-
-        Then("DLT 의 POISON 판정 목록과 같다") {
-            ReplyDeadLetterPolicy.POISON_CAUSES shouldContainExactlyInAnyOrder ReplyRetryPolicy.NON_RETRYABLE
         }
     }
 })

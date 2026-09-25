@@ -15,7 +15,6 @@ import java.time.LocalDateTime
 class SagaProgress(
     private val orderStateMachine: OrderStateMachine,
     private val sagaStateMachine: SagaStateMachine,
-    private val commandOutbox: SagaCommandOutbox,
     private val clock: Clock,
 ) {
 
@@ -29,14 +28,6 @@ class SagaProgress(
 
     fun close(order: Order, saga: OrderSaga) {
         apply(order, saga, OrderEvent.FAIL, SagaEvent.COMPENSATION_DONE)
-    }
-
-    fun beginCompensation(saga: OrderSaga, failureCode: String, error: String?) {
-        saga.recordFailure(failureCode)
-        error?.let { saga.recordError(it) }
-        advance(saga, SagaEvent.COMPENSATE)
-        saga.resetAttempts()
-        commandOutbox.appendPendingCancels(saga)
     }
 
     fun advance(saga: OrderSaga, event: SagaEvent) {
