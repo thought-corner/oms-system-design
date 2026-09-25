@@ -1,4 +1,4 @@
-package com.project.payment.config
+package com.project.payment.config.policy
 
 import com.project.payment.exception.NonRetryableExceptions
 import java.time.Duration

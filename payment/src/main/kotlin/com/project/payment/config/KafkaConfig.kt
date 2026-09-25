@@ -1,5 +1,6 @@
 package com.project.payment.config
 
+import com.project.payment.config.policy.CommandRetryPolicy
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.kafka.core.KafkaTemplate
