@@ -27,7 +27,7 @@ class ProductService(
 ) {
 
     @Transactional
-    fun buy(command: BuyCommand): Long {
+    fun buy(command: BuyCommand) {
         sagaGuardLock.lockForward(command.sagaId)
         if (historyRepository.findAllBySagaIdAndTransactionType(command.sagaId, ProductTransactionType.CANCEL).isNotEmpty()) {
             throw BusinessException(ProductErrorCode.SAGA_ALREADY_COMPENSATED, "sagaId=${command.sagaId}")
@@ -37,7 +37,6 @@ class ProductService(
         val totalPrice = if (purchaseHistories.isNotEmpty()) purchaseHistories.sumOf { it.price } else purchase(command)
 
         sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, command.sagaId, command.orderId, totalPrice)
-        return totalPrice
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -51,13 +50,10 @@ class ProductService(
     }
 
     @Transactional
-    fun cancel(command: BuyCancelCommand): Long {
+    fun cancel(command: BuyCancelCommand) {
         sagaGuardLock.lockCancel(command.sagaId)
-
-        val restoredPrice = restore(command.sagaId)
-
+        restore(command.sagaId)
         sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, command.sagaId, command.orderId)
-        return restoredPrice
     }
 
     private fun purchase(command: BuyCommand): Long {
@@ -84,28 +80,23 @@ class ProductService(
         return totalPrice
     }
 
-    private fun restore(sagaId: String): Long {
+    private fun restore(sagaId: String) {
         val purchaseHistories = historyRepository.findAllBySagaIdAndTransactionType(sagaId, ProductTransactionType.PURCHASE)
         if (purchaseHistories.isEmpty()) {
-            return 0L
+            return
         }
 
-        val cancelHistories = historyRepository.findAllBySagaIdAndTransactionType(sagaId, ProductTransactionType.CANCEL)
-        if (cancelHistories.isNotEmpty()) {
-            return cancelHistories.sumOf { it.price }
+        if (historyRepository.findAllBySagaIdAndTransactionType(sagaId, ProductTransactionType.CANCEL).isNotEmpty()) {
+            return
         }
 
-        var restoredPrice = 0L
         for (purchase in purchaseHistories.sortedBy { it.productId }) {
             val product = productRepository.findWithLockById(purchase.productId)
                 ?: throw BusinessException(ProductErrorCode.PRODUCT_NOT_FOUND, "productId=${purchase.productId}")
 
             product.restore(purchase.quantity)
             historyRepository.save(ProductTransactionHistory.cancel(purchase, LocalDateTime.now(clock)))
-            restoredPrice += purchase.price
         }
-
-        return restoredPrice
     }
 
     private fun quantitiesByProductId(items: List<BuyCommand.Item>): SortedMap<Long, Long> =

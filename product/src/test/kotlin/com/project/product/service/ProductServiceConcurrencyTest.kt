@@ -70,7 +70,7 @@ class ProductServiceConcurrencyTest : BehaviorSpec() {
                         }
                     }
                     locked.await(5, TimeUnit.SECONDS) shouldBe true
-                    val canceller = executor.submit<Long> { newTransaction().execute { service.cancel(BuyCancelCommand(sagaId, 1L)) } }
+                    val canceller = executor.submit { newTransaction().execute { service.cancel(BuyCancelCommand(sagaId, 1L)) } }
                     val waited = try {
                         Thread.sleep(500)
                         !canceller.isDone
@@ -78,9 +78,9 @@ class ProductServiceConcurrencyTest : BehaviorSpec() {
                         release.countDown()
                     }
                     buyer.get(10, TimeUnit.SECONDS)
-                    val restored = canceller.get(10, TimeUnit.SECONDS)
+                    canceller.get(10, TimeUnit.SECONDS)
                     val quantity = newTransaction().execute { productRepository.findById(productId).get().quantity }
-                    Triple(waited, restored, quantity)
+                    waited to quantity
                 } finally {
                     executor.shutdownNow()
                     newTransaction().execute {
@@ -95,8 +95,7 @@ class ProductServiceConcurrencyTest : BehaviorSpec() {
 
                 Then("보상은 가드에서 기다렸다가 커밋된 차감을 보고 재고를 되돌린다") {
                     result.first shouldBe true
-                    result.second shouldBe 600L
-                    result.third shouldBe 100L
+                    result.second shouldBe 100L
                 }
             }
         }

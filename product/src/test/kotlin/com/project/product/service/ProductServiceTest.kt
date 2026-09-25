@@ -100,10 +100,9 @@ class ProductServiceTest : BehaviorSpec({
         every { historyRepository.save(any()) } answers { firstArg() }
 
         When("3개 사면") {
-            val totalPrice = service.buy(buyCommand(2L, 3L))
+            service.buy(buyCommand(2L, 3L))
 
             Then("사가 가드를 FORWARD로 잡은 뒤 행 락으로 재고를 97로 차감하고 PURCHASE 이력과 총액 600의 성공 응답을 남긴다") {
-                totalPrice shouldBe 600L
                 product.quantity shouldBe 97L
                 verifyOrder {
                     guardRepository.insertIfAbsent("saga-1", SagaGuardKind.FORWARD.name, any())
@@ -124,7 +123,8 @@ class ProductServiceTest : BehaviorSpec({
     Given("재고 100 · 단가 200인 상품 2가 두 줄로 나뉘어 들어온 차감 요청") {
         val productRepository = mockk<ProductRepository>()
         val historyRepository = mockk<ProductTransactionHistoryRepository>()
-        val service = productService(productRepository, historyRepository)
+        val sagaReplyWriter = mockk<SagaReplyWriter>(relaxed = true)
+        val service = productService(productRepository, historyRepository, sagaReplyWriter = sagaReplyWriter)
         val product = ProductFixture.product(id = 2L, price = 200L)
         every { historyRepository.findAllBySagaIdAndTransactionType(any(), any()) } returns emptyList()
         every { productRepository.findWithLockById(2L) } returns product
@@ -136,11 +136,11 @@ class ProductServiceTest : BehaviorSpec({
         )
 
         When("사면") {
-            val totalPrice = service.buy(command)
+            service.buy(command)
 
-            Then("수량을 합쳐 한 번 잠그고 한 번 차감하며 PURCHASE 이력을 한 줄만 남긴다") {
-                totalPrice shouldBe 600L
+            Then("수량을 합쳐 한 번 잠그고 한 번 차감하며 PURCHASE 이력을 한 줄만 남기고 총액 600으로 응답한다") {
                 product.quantity shouldBe 97L
+                verify(exactly = 1) { sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, "saga-1", 1L, 600L) }
                 verify(exactly = 1) { productRepository.findWithLockById(2L) }
                 verify(exactly = 1) {
                     historyRepository.save(match<ProductTransactionHistory> { it.productId == 2L && it.quantity == 3L })
@@ -187,10 +187,9 @@ class ProductServiceTest : BehaviorSpec({
         } returns listOf(ProductFixture.history(price = 600L))
 
         When("같은 sagaId로 다시 차감을 요청하면") {
-            val totalPrice = service.buy(buyCommand(2L, 3L))
+            service.buy(buyCommand(2L, 3L))
 
-            Then("첫 번째 총액을 그대로 돌려주고 재고를 건드리지 않으며 같은 성공 응답을 다시 남긴다") {
-                totalPrice shouldBe 600L
+            Then("재고를 건드리지 않고 첫 번째 총액으로 같은 성공 응답을 다시 남긴다") {
                 verify(exactly = 1) { sagaReplyWriter.succeeded(ProductCommandType.STOCK_BUY, "saga-1", 1L, 600L) }
                 verify(exactly = 0) { productRepository.findWithLockById(any()) }
                 verify(exactly = 0) { historyRepository.save(any()) }
@@ -243,10 +242,9 @@ class ProductServiceTest : BehaviorSpec({
         every { historyRepository.findAllBySagaIdAndTransactionType("saga-none", any()) } returns emptyList()
 
         When("보상을 요청하면") {
-            val restored = service.cancel(BuyCancelCommand(sagaId = "saga-none", orderId = 1L))
+            service.cancel(BuyCancelCommand(sagaId = "saga-none", orderId = 1L))
 
-            Then("CANCEL 가드를 남기고 0을 돌려주며 실패 대신 성공 응답을 남긴다") {
-                restored shouldBe 0L
+            Then("CANCEL 가드를 남기고 실패 대신 성공 응답을 남긴다") {
                 verify(exactly = 1) {
                     sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, "saga-none", 1L, null)
                 }
@@ -278,10 +276,9 @@ class ProductServiceTest : BehaviorSpec({
         every { historyRepository.save(any()) } answers { firstArg() }
 
         When("보상을 요청하면") {
-            val restored = service.cancel(BuyCancelCommand(sagaId = "saga-1", orderId = 1L))
+            service.cancel(BuyCancelCommand(sagaId = "saga-1", orderId = 1L))
 
-            Then("productId 오름차순으로 잠가 재고를 되돌리고 차감 이력의 주문으로 CANCEL 이력과 성공 응답을 남기고 복구 금액 800을 돌려준다") {
-                restored shouldBe 800L
+            Then("productId 오름차순으로 잠가 재고를 되돌리고 차감 이력의 주문으로 CANCEL 이력과 성공 응답을 남긴다") {
                 product1.quantity shouldBe 100L
                 product3.quantity shouldBe 100L
                 verifyOrder {
@@ -313,10 +310,9 @@ class ProductServiceTest : BehaviorSpec({
         } returns listOf(ProductFixture.history(price = 600L, transactionType = ProductTransactionType.CANCEL))
 
         When("같은 sagaId로 보상을 다시 요청하면") {
-            val restored = service.cancel(BuyCancelCommand(sagaId = "saga-1", orderId = 1L))
+            service.cancel(BuyCancelCommand(sagaId = "saga-1", orderId = 1L))
 
-            Then("첫 번째 복구 금액을 그대로 돌려주고 재고를 두 번 되돌리지 않으며 같은 성공 응답을 다시 남긴다") {
-                restored shouldBe 600L
+            Then("재고를 두 번 되돌리지 않고 같은 성공 응답을 다시 남긴다") {
                 verify(exactly = 1) {
                     sagaReplyWriter.succeeded(ProductCommandType.STOCK_CANCEL, "saga-1", 1L, null)
                 }

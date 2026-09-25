@@ -164,6 +164,7 @@ class ProductCommandIntegrationTest : BehaviorSpec() {
                         verify { alertSender.send(match { it.sagaId == sagaId }) }
                     }
                     verify { alertSender.send(capture(alert)) }
+                    alert.captured.topic shouldBe IntegrationTestConfig.COMMAND_TOPIC
                     alert.captured.sagaId shouldBe sagaId
                     alert.captured.orderId shouldBe "2003"
                     alert.captured.messageType shouldBe "STOCK_BUY"
