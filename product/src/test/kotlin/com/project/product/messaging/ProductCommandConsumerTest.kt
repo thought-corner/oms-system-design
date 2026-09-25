@@ -14,7 +14,9 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.BehaviorSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.Called
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import org.apache.kafka.clients.consumer.ConsumerRecord
@@ -196,7 +198,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
 
     Given("정상 STOCK_BUY 레코드") {
         val productService = mockk<ProductService>()
-        every { productService.buy(BUY_COMMAND) } returns 400L
+        every { productService.buy(BUY_COMMAND) } just Runs
 
         When("소비하면") {
             consumer(productService).onCommand(record("STOCK_BUY", BUY_BYTES))
@@ -210,7 +212,7 @@ class ProductCommandConsumerTest : BehaviorSpec({
 
     Given("STOCK_CANCEL 레코드") {
         val productService = mockk<ProductService>()
-        every { productService.cancel(BuyCancelCommand("saga-1", 10L)) } returns 0L
+        every { productService.cancel(BuyCancelCommand("saga-1", 10L)) } just Runs
 
         When("소비하면") {
             consumer(productService).onCommand(record("STOCK_CANCEL", CANCEL_BYTES))

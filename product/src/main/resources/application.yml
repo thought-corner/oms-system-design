@@ -2,6 +2,8 @@ server:
   port: 8082
 
 spring:
+  config:
+    import: optional:classpath:application-secret.yml
   application:
     name: product
   jpa:
@@ -27,3 +29,9 @@ spring:
     listener:
       ack-mode: record
       concurrency: 3
+
+alert:
+  discord:
+    action-webhook-url: ${ALERT_DISCORD_ACTION_WEBHOOK_URL:}
+    incident-webhook-url: ${ALERT_DISCORD_INCIDENT_WEBHOOK_URL:}
+    defect-webhook-url: ${ALERT_DISCORD_DEFECT_WEBHOOK_URL:}

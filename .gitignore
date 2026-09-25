@@ -40,3 +40,6 @@ out/
 .claude/settings.local.json
 .claude/.instructions-loaded.log
 .kotlin/
+
+### Discord webhook URLs ###
+**/src/main/resources/application-secret.yml
