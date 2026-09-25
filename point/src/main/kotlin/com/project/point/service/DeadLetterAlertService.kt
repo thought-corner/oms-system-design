@@ -2,7 +2,7 @@ package com.project.point.service
 
 import com.project.common.exception.CommonErrorCode
 import com.project.point.client.AlertSender
-import com.project.point.client.CommandDeadLetterAlert
+import com.project.point.client.DeadLetterAlert
 import com.project.point.client.DeadLetterKind
 import com.project.point.exception.NonRetryableExceptions
 import com.project.point.service.dto.DeadLetterCommand
@@ -13,39 +13,39 @@ import org.springframework.stereotype.Service
 import java.util.UUID
 
 @Service
-class CommandDeadLetterService(
+class DeadLetterAlertService(
     private val pointService: PointService,
     private val alertSender: AlertSender,
 ) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    fun handle(command: DeadLetterCommand) {
-        val kind = kindOf(command)
-        val failedReplyWritten = kind == DeadLetterKind.POISON && recordForwardFailure(command)
+    fun handle(deadLetter: DeadLetterCommand) {
+        val kind = kindOf(deadLetter)
+        val failedReplyWritten = kind == DeadLetterKind.POISON && recordForwardFailure(deadLetter)
         alertSender.send(
-            CommandDeadLetterAlert(
-                topic = command.topic,
-                orderId = command.orderId,
-                sagaId = command.sagaId,
-                messageType = command.messageType,
-                exceptionClass = command.exceptionClass,
-                exceptionMessage = command.exceptionMessage,
+            DeadLetterAlert(
+                topic = deadLetter.topic,
+                orderId = deadLetter.orderId,
+                sagaId = deadLetter.sagaId,
+                messageType = deadLetter.messageType,
+                exceptionClass = deadLetter.exceptionClass,
+                exceptionMessage = deadLetter.exceptionMessage,
                 kind = kind,
                 failedReplyWritten = failedReplyWritten,
             ),
         )
     }
 
-    private fun kindOf(command: DeadLetterCommand): DeadLetterKind =
-        if (NonRetryableExceptions.includes(command.exceptionClass)) DeadLetterKind.POISON else DeadLetterKind.RETRY_EXHAUSTED
+    private fun kindOf(deadLetter: DeadLetterCommand): DeadLetterKind =
+        if (NonRetryableExceptions.includes(deadLetter.exceptionClass)) DeadLetterKind.POISON else DeadLetterKind.RETRY_EXHAUSTED
 
-    private fun recordForwardFailure(command: DeadLetterCommand): Boolean {
-        PointMessageType.entries.firstOrNull { it.name == command.messageType }
+    private fun recordForwardFailure(deadLetter: DeadLetterCommand): Boolean {
+        PointMessageType.entries.firstOrNull { it.name == deadLetter.messageType }
             ?.takeIf { it.direction == SagaDirection.FORWARD }
             ?: return false
-        val orderId = command.orderId?.toLongOrNull() ?: return false
-        val sagaId = command.sagaId?.takeIf(::isSagaId) ?: return false
+        val orderId = deadLetter.orderId?.toLongOrNull() ?: return false
+        val sagaId = deadLetter.sagaId?.takeIf(::isSagaId) ?: return false
 
         return try {
             pointService.recordUseFailure(sagaId, orderId, CommonErrorCode.INTERNAL_ERROR)

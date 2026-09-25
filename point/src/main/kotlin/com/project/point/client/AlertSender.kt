@@ -2,12 +2,12 @@ package com.project.point.client
 
 interface AlertSender {
 
-    fun send(alert: CommandDeadLetterAlert)
+    fun send(alert: DeadLetterAlert)
 }
 
 enum class DeadLetterKind { POISON, RETRY_EXHAUSTED }
 
-data class CommandDeadLetterAlert(
+data class DeadLetterAlert(
     val topic: String,
     val orderId: String?,
     val sagaId: String?,

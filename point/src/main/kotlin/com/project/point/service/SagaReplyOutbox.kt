@@ -25,7 +25,7 @@ class SagaReplyOutbox(
         outboxMessageRepository.save(
             OutboxMessage(
                 messageId = UUID.randomUUID().toString(),
-                topic = REPLY_TOPIC,
+                topic = MessageContract.REPLY_TOPIC,
                 messageKey = reply.orderId.toString(),
                 sagaId = reply.sagaId,
                 messageType = messageType.name,
@@ -57,8 +57,4 @@ class SagaReplyOutbox(
             SagaOutcome.SUCCEEDED -> SagaOutcomeMessage.SAGA_OUTCOME_SUCCEEDED
             SagaOutcome.FAILED -> SagaOutcomeMessage.SAGA_OUTCOME_FAILED
         }
-
-    companion object {
-        const val REPLY_TOPIC = "saga.replies"
-    }
 }

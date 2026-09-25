@@ -8,10 +8,10 @@ import com.project.message.point.SagaReply
 import com.project.message.point.SagaStep
 import com.project.point.DbTag
 import com.project.point.client.AlertSender
-import com.project.point.client.CommandDeadLetterAlert
+import com.project.point.client.DeadLetterAlert
 import com.project.point.client.DeadLetterKind
 import com.project.point.fixture.PointFixture
-import com.project.point.messaging.MessageHeaders
+import com.project.point.service.MessageContract
 import com.project.point.repository.PointRepository
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.core.spec.style.BehaviorSpec
@@ -57,8 +57,8 @@ class PointCommandIntegrationTest : BehaviorSpec() {
 
     private fun send(orderId: Long, sagaId: String, messageType: String, value: ByteArray) {
         val record = ProducerRecord<String, ByteArray>(IntegrationTestConfig.COMMAND_TOPIC, orderId.toString(), value)
-        record.headers().add(MessageHeaders.SAGA_ID, sagaId.toByteArray())
-        record.headers().add(MessageHeaders.MESSAGE_TYPE, messageType.toByteArray())
+        record.headers().add(MessageContract.SAGA_ID_HEADER, sagaId.toByteArray())
+        record.headers().add(MessageContract.MESSAGE_TYPE_HEADER, messageType.toByteArray())
         kafkaTemplate.send(record).get()
     }
 
@@ -181,7 +181,7 @@ class PointCommandIntegrationTest : BehaviorSpec() {
                         val received = mutableListOf<ConsumerRecord<String, ByteArray>>()
                         eventually(20.seconds) {
                             received += dlt.poll(Duration.ofMillis(500))
-                            val record = received.single { it.header(MessageHeaders.SAGA_ID) == sagaId }
+                            val record = received.single { it.header(MessageContract.SAGA_ID_HEADER) == sagaId }
                             record.key() shouldBe "72"
                             record.value().toList() shouldBe BROKEN_BYTES.toList()
                         }
@@ -189,8 +189,9 @@ class PointCommandIntegrationTest : BehaviorSpec() {
                     eventually(10.seconds) {
                         verify(exactly = 1) {
                             alertSender.send(
-                                match<CommandDeadLetterAlert> {
-                                    it.sagaId == sagaId && it.orderId == "72" && it.messageType == "POINT_USE" &&
+                                match<DeadLetterAlert> {
+                                    it.topic == IntegrationTestConfig.COMMAND_TOPIC && it.sagaId == sagaId && it.orderId == "72" &&
+                                        it.messageType == "POINT_USE" &&
                                         it.kind == DeadLetterKind.POISON && it.failedReplyWritten
                                 },
                             )
@@ -198,7 +199,7 @@ class PointCommandIntegrationTest : BehaviorSpec() {
                     }
                     consumer(IntegrationTestConfig.RETRY_0_TOPIC).use { retry ->
                         val retried = (1..4).flatMap { retry.poll(Duration.ofMillis(500)) }
-                        retried.filter { it.header(MessageHeaders.SAGA_ID) == sagaId }.shouldBeEmpty()
+                        retried.filter { it.header(MessageContract.SAGA_ID_HEADER) == sagaId }.shouldBeEmpty()
                     }
                     val reply = replies(sagaId).single()
                     val payload = payloadOf(reply)

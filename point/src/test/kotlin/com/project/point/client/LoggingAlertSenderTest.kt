@@ -6,7 +6,7 @@ import io.kotest.core.spec.style.BehaviorSpec
 class LoggingAlertSenderTest : BehaviorSpec({
 
     Given("헤더가 비어 있는 DLT 커맨드") {
-        val alert = CommandDeadLetterAlert("cmd.point-dlt", null, null, null, null, null, DeadLetterKind.RETRY_EXHAUSTED, false)
+        val alert = DeadLetterAlert("cmd.point", null, null, null, null, null, DeadLetterKind.RETRY_EXHAUSTED, false)
 
         When("알림을 보내면") {
 
