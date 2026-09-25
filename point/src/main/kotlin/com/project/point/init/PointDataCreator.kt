@@ -12,6 +12,7 @@ class PointDataCreator(
 
     @PostConstruct
     fun createSeedData() {
+        if (pointRepository.count() > 0) return
         SEED_USER_IDS.forEach { userId ->
             pointRepository.save(Point(userId = userId, amount = 10000L))
         }
