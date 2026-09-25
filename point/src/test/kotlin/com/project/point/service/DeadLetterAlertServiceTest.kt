@@ -2,7 +2,7 @@ package com.project.point.service
 
 import com.project.common.exception.CommonErrorCode
 import com.project.point.client.AlertSender
-import com.project.point.client.CommandDeadLetterAlert
+import com.project.point.client.DeadLetterAlert
 import com.project.point.client.DeadLetterKind
 import com.project.point.service.dto.DeadLetterCommand
 import io.kotest.assertions.throwables.shouldNotThrowAny
@@ -24,28 +24,28 @@ private fun deadLetter(
     orderId: String? = "10",
     sagaId: String? = SAGA_ID,
     exceptionClass: String? = PROTOBUF_FAILURE,
-) = DeadLetterCommand("cmd.point-dlt", orderId, sagaId, messageType, exceptionClass, "broken")
+) = DeadLetterCommand("cmd.point", orderId, sagaId, messageType, exceptionClass, "broken")
 
-private fun alertOf(alertSender: AlertSender): CommandDeadLetterAlert {
-    val alert = slot<CommandDeadLetterAlert>()
+private fun alertOf(alertSender: AlertSender): DeadLetterAlert {
+    val alert = slot<DeadLetterAlert>()
     verify(exactly = 1) { alertSender.send(capture(alert)) }
     return alert.captured
 }
 
-class CommandDeadLetterServiceTest : BehaviorSpec({
+class DeadLetterAlertServiceTest : BehaviorSpec({
 
     Given("재시도를 모두 소진한 일시 장애의 POINT_USE") {
         val pointService = mockk<PointService>()
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(pointService, alertSender)
+        val service = DeadLetterAlertService(pointService, alertSender)
 
         When("DLT 에서 처리하면") {
             service.handle(deadLetter(exceptionClass = "org.springframework.dao.CannotAcquireLockException"))
 
             Then("업무 결과로 바꾸지 않고 RETRY_EXHAUSTED 로 알리기만 한다") {
                 verify { pointService wasNot Called }
-                alertOf(alertSender) shouldBe CommandDeadLetterAlert(
-                    "cmd.point-dlt", "10", SAGA_ID, "POINT_USE", "org.springframework.dao.CannotAcquireLockException", "broken",
+                alertOf(alertSender) shouldBe DeadLetterAlert(
+                    "cmd.point", "10", SAGA_ID, "POINT_USE", "org.springframework.dao.CannotAcquireLockException", "broken",
                     DeadLetterKind.RETRY_EXHAUSTED, false,
                 )
             }
@@ -55,7 +55,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
     Given("원인 예외 이름이 없는 DLT 레코드") {
         val pointService = mockk<PointService>()
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(pointService, alertSender)
+        val service = DeadLetterAlertService(pointService, alertSender)
 
         When("DLT 에서 처리하면") {
             service.handle(deadLetter(exceptionClass = null))
@@ -70,7 +70,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
     Given("재시도 불가 예외로 DLT 에 온 POINT_CANCEL") {
         val pointService = mockk<PointService>()
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(pointService, alertSender)
+        val service = DeadLetterAlertService(pointService, alertSender)
 
         When("DLT 에서 처리하면") {
             service.handle(deadLetter(messageType = "POINT_CANCEL"))
@@ -87,7 +87,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
     Given("재시도 불가 예외로 DLT 에 온 POINT_USE") {
         val pointService = mockk<PointService>(relaxed = true)
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(pointService, alertSender)
+        val service = DeadLetterAlertService(pointService, alertSender)
 
         When("DLT 에서 처리하면") {
             service.handle(deadLetter())
@@ -115,7 +115,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
             When("${command.orderId}·${command.sagaId}·${command.messageType} 를 처리하면") {
                 val pointService = mockk<PointService>()
                 val alertSender = mockk<AlertSender>(relaxed = true)
-                CommandDeadLetterService(pointService, alertSender).handle(command)
+                DeadLetterAlertService(pointService, alertSender).handle(command)
 
                 Then("응답을 쓰지 않고 POISON 알림만 보낸다") {
                     verify { pointService wasNot Called }
@@ -132,7 +132,7 @@ class CommandDeadLetterServiceTest : BehaviorSpec({
         every { pointService.recordUseFailure(SAGA_ID, 10L, CommonErrorCode.INTERNAL_ERROR) } throws
             DataAccessResourceFailureException("db down")
         val alertSender = mockk<AlertSender>(relaxed = true)
-        val service = CommandDeadLetterService(pointService, alertSender)
+        val service = DeadLetterAlertService(pointService, alertSender)
 
         When("DLT 에서 처리하면") {
 

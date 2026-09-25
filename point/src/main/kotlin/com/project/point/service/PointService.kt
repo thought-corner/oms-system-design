@@ -8,7 +8,6 @@ import com.project.point.exception.PointErrorCode
 import com.project.point.repository.PointRepository
 import com.project.point.repository.PointTransactionHistoryRepository
 import com.project.point.service.dto.PointMessageType
-import com.project.point.service.dto.SagaReply
 import com.project.point.service.dto.UseCancelCommand
 import com.project.point.service.dto.UseCommand
 import org.springframework.stereotype.Service
@@ -37,10 +36,7 @@ class PointService(
             deduct(command)
         }
 
-        sagaReplyOutbox.append(
-            PointMessageType.POINT_USE,
-            SagaReply.succeeded(PointMessageType.POINT_USE, command.sagaId, command.orderId),
-        )
+        sagaReplyOutbox.succeeded(PointMessageType.POINT_USE, command.sagaId, command.orderId)
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -50,22 +46,14 @@ class PointService(
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun recordUseFailure(sagaId: String, orderId: Long, errorCode: ErrorCode) {
-        sagaReplyOutbox.append(
-            PointMessageType.POINT_USE,
-            SagaReply.failed(PointMessageType.POINT_USE, sagaId, orderId, errorCode.code),
-        )
+        sagaReplyOutbox.failed(PointMessageType.POINT_USE, sagaId, orderId, errorCode)
     }
 
     @Transactional
-    fun cancel(command: UseCancelCommand): Long {
+    fun cancel(command: UseCancelCommand) {
         sagaGuardLock.lockCancel(command.sagaId)
-        val refundedAmount = refund(command)
-
-        sagaReplyOutbox.append(
-            PointMessageType.POINT_CANCEL,
-            SagaReply.succeeded(PointMessageType.POINT_CANCEL, command.sagaId, command.orderId),
-        )
-        return refundedAmount
+        refund(command)
+        sagaReplyOutbox.succeeded(PointMessageType.POINT_CANCEL, command.sagaId, command.orderId)
     }
 
     private fun deduct(command: UseCommand) {
@@ -84,13 +72,11 @@ class PointService(
         )
     }
 
-    private fun refund(command: UseCancelCommand): Long {
+    private fun refund(command: UseCancelCommand) {
         val useHistory = historyRepository.findBySagaIdAndTransactionType(command.sagaId, PointTransactionType.USE)
-            ?: return 0L
-
-        val cancelHistory = historyRepository.findBySagaIdAndTransactionType(command.sagaId, PointTransactionType.CANCEL)
-        if (cancelHistory != null) {
-            return cancelHistory.amount
+            ?: return
+        if (historyRepository.findBySagaIdAndTransactionType(command.sagaId, PointTransactionType.CANCEL) != null) {
+            return
         }
 
         val point = pointRepository.findWithLockByUserId(useHistory.userId)
@@ -98,7 +84,5 @@ class PointService(
 
         point.refund(useHistory.amount)
         historyRepository.save(PointTransactionHistory.cancel(useHistory, LocalDateTime.now(clock)))
-
-        return useHistory.amount
     }
 }
