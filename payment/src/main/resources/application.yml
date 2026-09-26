@@ -33,7 +33,7 @@ spring:
     listener:
       missing-topics-fatal: true
       ack-mode: record
-      concurrency: 12
+      concurrency: 48
 
 alert:
   discord:

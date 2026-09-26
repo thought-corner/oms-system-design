@@ -61,7 +61,7 @@ services:
     command:
       - |
         set -e
-        for spec in product.command:3 point.command:3 payment.command:12 order.reply:3; do
+        for spec in product.command:3 point.command:3 payment.command:48 order.reply:3; do
           topic=$${spec%%:*}
           partitions=$${spec##*:}
           for name in "$$topic" "$$topic.retry-0" "$$topic.retry-1" "$$topic.retry-2" "$$topic.dlt"; do

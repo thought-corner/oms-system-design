@@ -56,7 +56,7 @@ class PaymentServiceTest : BehaviorSpec({
         When("같은 sagaId로 결제를 다시 요청하면") {
             service.pay(PaymentFixture.payCommand())
 
-            Then("외부 승인을 기다리지 않고 새 결제를 기록하지 않으며 성공 응답을 다시 남긴다") {
+            Then("새 결제를 기록하지 않으며 성공 응답을 다시 남긴다") {
                 verify(exactly = 0) { paymentRepository.findByPaidOrderId(any()) }
                 verify(exactly = 0) { paymentRepository.save(any()) }
                 verify(exactly = 1) {
@@ -158,7 +158,7 @@ class PaymentServiceTest : BehaviorSpec({
         When("새 사가로 결제를 요청하면") {
             val exception = shouldThrow<BusinessException> { service.pay(PaymentFixture.payCommand(sagaId = "saga-2")) }
 
-            Then("ALREADY_PAID로 거부하고 외부 승인을 기다리지 않으며 이 트랜잭션에는 응답을 남기지 않는다") {
+            Then("ALREADY_PAID로 거부하고 이 트랜잭션에는 응답을 남기지 않는다") {
                 exception.errorCode shouldBe PaymentErrorCode.ALREADY_PAID
                 verify(exactly = 0) { paymentRepository.save(any()) }
                 verify { sagaReplyOutbox wasNot Called }
@@ -198,7 +198,7 @@ class PaymentServiceTest : BehaviorSpec({
         }
     }
 
-    Given("외부 승인을 기다리는 동안 다른 사가가 같은 주문을 먼저 결제한 상태") {
+    Given("결제를 기록하는 사이 다른 사가가 같은 주문을 먼저 결제한 상태") {
         val paymentRepository = mockk<PaymentRepository>()
         val sagaReplyOutbox = sagaReplyOutbox()
         val service = paymentService(paymentRepository, sagaReplyOutbox = sagaReplyOutbox)

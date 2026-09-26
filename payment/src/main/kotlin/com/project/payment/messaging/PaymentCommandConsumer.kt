@@ -6,6 +6,7 @@ import com.project.message.payment.PaymentPayCommand
 import com.project.payment.messaging.dto.toCommand
 import com.project.payment.service.DeadLetterAlertService
 import com.project.payment.service.MessageContract
+import com.project.payment.service.PaymentApproval
 import com.project.payment.service.PaymentService
 import com.project.payment.service.dto.DeadLetterCommand
 import com.project.payment.service.dto.PayCommand
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component
 @Component
 class PaymentCommandConsumer(
     private val paymentService: PaymentService,
+    private val paymentApproval: PaymentApproval,
     private val deadLetterAlertService: DeadLetterAlertService,
 ) {
 
@@ -44,6 +46,7 @@ class PaymentCommandConsumer(
     }
 
     private fun pay(command: PayCommand) {
+        paymentApproval.await(command)
         try {
             paymentService.pay(command)
         } catch (e: BusinessException) {
