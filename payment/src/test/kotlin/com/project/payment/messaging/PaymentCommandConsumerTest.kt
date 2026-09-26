@@ -7,6 +7,7 @@ import com.project.message.payment.PaymentPayCommand
 import com.project.payment.exception.PaymentErrorCode
 import com.project.payment.fixture.PaymentFixture
 import com.project.payment.service.DeadLetterAlertService
+import com.project.payment.service.PaymentApproval
 import com.project.payment.service.PaymentService
 import com.project.payment.service.dto.DeadLetterCommand
 import com.project.payment.service.dto.PayCancelCommand
@@ -20,6 +21,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.header.internals.RecordHeader
 import org.springframework.dao.QueryTimeoutException
@@ -56,7 +58,8 @@ private fun record(
 private fun consumer(
     paymentService: PaymentService,
     deadLetterAlertService: DeadLetterAlertService = mockk(),
-): PaymentCommandConsumer = PaymentCommandConsumer(paymentService, deadLetterAlertService)
+    paymentApproval: PaymentApproval = mockk(relaxed = true),
+): PaymentCommandConsumer = PaymentCommandConsumer(paymentService, paymentApproval, deadLetterAlertService)
 
 class PaymentCommandConsumerTest : BehaviorSpec({
 
@@ -176,12 +179,16 @@ class PaymentCommandConsumerTest : BehaviorSpec({
     Given("결제된 주문의 PAYMENT_PAY 커맨드") {
         val paymentService = mockk<PaymentService>()
         every { paymentService.pay(PAY_COMMAND) } just Runs
+        val paymentApproval = mockk<PaymentApproval>(relaxed = true)
 
         When("소비하면") {
-            consumer(paymentService).onCommand(record("PAYMENT_PAY", PAY_BYTES))
+            consumer(paymentService, paymentApproval = paymentApproval).onCommand(record("PAYMENT_PAY", PAY_BYTES))
 
-            Then("본문을 PayCommand 로 옮겨 결제를 부르고 실패 응답은 남기지 않는다") {
-                verify(exactly = 1) { paymentService.pay(PAY_COMMAND) }
+            Then("트랜잭션 밖에서 외부 승인을 기다린 뒤 본문을 PayCommand 로 옮겨 결제를 부르고 실패 응답은 남기지 않는다") {
+                verifyOrder {
+                    paymentApproval.await(PAY_COMMAND)
+                    paymentService.pay(PAY_COMMAND)
+                }
                 verify(exactly = 0) { paymentService.recordPayFailure(any(), any()) }
             }
         }
@@ -190,11 +197,13 @@ class PaymentCommandConsumerTest : BehaviorSpec({
     Given("PAYMENT_CANCEL 커맨드") {
         val paymentService = mockk<PaymentService>()
         every { paymentService.cancel(any()) } just Runs
+        val paymentApproval = mockk<PaymentApproval>(relaxed = true)
 
         When("소비하면") {
-            consumer(paymentService).onCommand(record("PAYMENT_CANCEL", CANCEL_BYTES))
+            consumer(paymentService, paymentApproval = paymentApproval).onCommand(record("PAYMENT_CANCEL", CANCEL_BYTES))
 
-            Then("본문을 PayCancelCommand 로 옮겨 결제 취소를 부른다") {
+            Then("외부 승인을 기다리지 않고 본문을 PayCancelCommand 로 옮겨 결제 취소를 부른다") {
+                verify { paymentApproval wasNot Called }
                 verify(exactly = 1) { paymentService.cancel(PayCancelCommand(sagaId = "saga-1", orderId = 1L)) }
             }
         }

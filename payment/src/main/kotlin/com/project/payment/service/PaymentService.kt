@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
-import java.time.Duration
 import java.time.LocalDateTime
 
 @Service
@@ -71,8 +70,6 @@ class PaymentService(
             throw BusinessException(PaymentErrorCode.ALREADY_PAID, "orderId=${command.orderId}")
         }
 
-        simulateExternalPaymentGatewayLatency()
-
         try {
             paymentRepository.save(
                 Payment(
@@ -101,12 +98,4 @@ class PaymentService(
 
     private fun isOrderAlreadyPaid(e: DataIntegrityViolationException): Boolean =
         e.mostSpecificCause.message?.contains(Payment.UK_PAID_ORDER_ID) == true
-
-    private fun simulateExternalPaymentGatewayLatency() {
-        Thread.sleep(EXTERNAL_PAYMENT_GATEWAY_LATENCY.toMillis())
-    }
-
-    companion object {
-        val EXTERNAL_PAYMENT_GATEWAY_LATENCY: Duration = Duration.ofSeconds(3)
-    }
 }
