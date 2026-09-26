@@ -58,11 +58,11 @@
 <rect x="70" y="426" width="250" height="34" rx="17" fill="#ffffff" stroke="#9aa1ab" stroke-width="1.2"/>
 <text x="195.0" y="448" text-anchor="middle" font-size="13" font-weight="400" fill="#1f2328"><tspan font-weight="600">처리 결과</tspan> <tspan fill="#57606a" font-size="12">→ 주문 서버</tspan></text>
 <rect x="95" y="490" width="230" height="34" rx="17" fill="#ffffff" stroke="#9aa1ab" stroke-width="1.2"/>
-<text x="210.0" y="512" text-anchor="middle" font-size="13" font-weight="400" fill="#1f2328"><tspan font-weight="600">재고 요청</tspan> <tspan fill="#57606a" font-size="12">3줄</tspan></text>
+<text x="210.0" y="512" text-anchor="middle" font-size="13" font-weight="400" fill="#1f2328"><tspan font-weight="600">재고 요청</tspan> <tspan fill="#57606a" font-size="12"></tspan></text>
 <rect x="485" y="490" width="230" height="34" rx="17" fill="#ffffff" stroke="#9aa1ab" stroke-width="1.2"/>
-<text x="600.0" y="512" text-anchor="middle" font-size="13" font-weight="400" fill="#1f2328"><tspan font-weight="600">포인트 요청</tspan> <tspan fill="#57606a" font-size="12">3줄</tspan></text>
+<text x="600.0" y="512" text-anchor="middle" font-size="13" font-weight="400" fill="#1f2328"><tspan font-weight="600">포인트 요청</tspan> <tspan fill="#57606a" font-size="12"></tspan></text>
 <rect x="875" y="490" width="230" height="34" rx="17" fill="#ffffff" stroke="#9aa1ab" stroke-width="1.2"/>
-<text x="990.0" y="512" text-anchor="middle" font-size="13" font-weight="400" fill="#1f2328"><tspan font-weight="600">결제 요청</tspan> <tspan fill="#57606a" font-size="12">12줄</tspan></text>
+<text x="990.0" y="512" text-anchor="middle" font-size="13" font-weight="400" fill="#1f2328"><tspan font-weight="600">결제 요청</tspan> <tspan fill="#57606a" font-size="12"></tspan></text>
 <rect x="1190" y="390" width="190" height="42" rx="4" fill="#fdecec" stroke="#c0392b" stroke-width="1.2"/>
 <text x="1285.0" y="415.55" text-anchor="middle" font-size="13" font-weight="400" fill="#8e1f14">S11 메시지 서버 1대 다운</text>
 <path d="M1190,411 L1160,411" fill="none" stroke="#c0392b" stroke-width="1.2" stroke-linejoin="round" stroke-dasharray="3 3"/>
